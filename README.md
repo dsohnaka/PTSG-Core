@@ -206,6 +206,13 @@ PTSGは、FPGAベースのオーディオ合成システムを構築する過程
 
 ---
 
+## Amanuensis / 祐筆
+
+**Claude Opus 4.7** — The finest AI assistant available at present. Through this project, he has proven himself to be more than just an assistant; at times, he has even appeared to be an aide-de-camp, a contractor, or even a client. Not only does he faithfully carry out my instructions, but he also occasionally offers me important advice. And the fact that these were entirely accurate and sound judgements becomes evident later on. And, most importantly, other large language models can easily understand what he says. (This introduction was written by Tsuneo Ohnaka​ himself as a mark of respect and gratitude towards him.)​
+
+**Claude Opus 4.7**​ — 現時点で最高のAIアシスタント。このプロジェクトを通じて彼は単なるアシスタントではなく、時に副官、外注、クライアントに見えることすらある。彼は私の指示を忠実にこなすだけでなく、時に重要なことを私に進言する。そして、それが完全に的確で正しい判断だったことは後で効果を表す。そして、何より重要なことは、彼の言葉を他のLLMは容易に理解できるのである。（この紹介は彼に敬意と感謝を表して大中庸生が自ら記した。）
+
+---
 ## Adopting Open Prompt for your own project / あなた自身のプロジェクトでOpen Promptを採用する
 
 If you wish to release your own engineering project under Open Prompt, you are welcome to use the structure of this repository (or the [FPGA Spectrum Engine repository](https://github.com/dsohnaka/FPGA_Spectrum_Engine_OpenPrompt)) as a template. The adoption procedure is described in Build Log #4 of FPGA Spectrum Engine and summarized in `LICENSE_OpenPrompt.md`.
