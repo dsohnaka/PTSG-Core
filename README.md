@@ -201,7 +201,7 @@ PTSG was designed in the course of building FPGA-based audio synthesis systems, 
 PTSGは、FPGAベースのオーディオ合成システムを構築する過程で設計された——そこでは従来のFSM設計の限界とHDLコンパイルサイクルのボトルネックが、より機敏な制御プリミティブの探求を動機付けた。
 
 - Hackaday.io: [Tsuneo.Ohnaka](https://hackaday.io/Tsuneo.Ohnaka)
-- Hackaday.io project page: *(URL to be added on launch)*
+- Hackaday.io project page: [PTSG — Programmable Timing Sequence Generator]([URL to be added on launch](https://hackaday.io/project/205720-ptsg-programmable-timing-sequence-generator))
 - Parent project: [FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine)
 
 ---
