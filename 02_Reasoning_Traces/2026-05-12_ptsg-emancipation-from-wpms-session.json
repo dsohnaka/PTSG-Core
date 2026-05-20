@@ -1,0 +1,233 @@
+{
+  "metadata": {
+    "title": "PTSG Emancipation from WPMS — Periodicity Layers, Upper/Lower Split, and the Spin-Off Decision",
+    "title_ja": "PTSGのWPMSからの解放 — 周期レイヤー、Upper/Lower分割、暖簾分け決定",
+    "date": "2026-05-12",
+    "session_type": "single-AI technical-emancipation dialogue within an active engineering project",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years)",
+        "role_ja": "FPGAアーキテクト（40年以上）"
+      },
+      {
+        "name": "Claude",
+        "provider": "Anthropic",
+        "model_family": "Claude Opus 4.7",
+        "interface": "Web chat with project knowledge (FPGA Spectrum Engine WPMS Layer 1 session)",
+        "role": "AI collaborator — first reader of the freshly-redrafted PTSG specification; architectural articulation of properties and implications",
+        "role_ja": "AI協働者 — 新たに策定し直されたPTSG仕様の最初の読者；性質と含意のアーキテクチャ的明確化"
+      }
+    ],
+    "topic": "The dialogue within FPGA Spectrum Engine's WPMS Chapter 3 drafting in which a pre-existing PTSG prototype, freshly redrafted for the WPMS pipeline-processor role, was recognized as a primitive too general-purpose to remain inside WPMS — leading to the four foundational decisions that defined the PTSG ecosystem: (1) the periodicity-layer framework (L1/L2/L3/L4), (2) the Upper/Lower PTSG split, (3) the spin-off into an independent Open Prompt repository, (4) the separation of the PTSG-designer and PTSG-user roles into distinct sessions",
+    "topic_ja": "FPGA Spectrum EngineのWPMS第3章起草内における対話で、WPMSパイプラインプロセッサ役のために新たに策定し直された既存PTSG原型が、WPMS内に留めるには汎用すぎるプリミティブとして認識された——PTSGエコシステムを定義した4つの基礎的決定に至った: (1) 周期レイヤーフレーム(L1/L2/L3/L4)、(2) Upper/Lower PTSG分割、(3) 独立Open Promptリポジトリへの暖簾分け、(4) PTSG設計者役とPTSGユーザー役を別セッションに分離",
+    "status": "Inaugural Layer 2 trace of the PTSG-Core repository (one of two) — technical-emancipation side",
+    "status_ja": "PTSG-Coreリポジトリの最初の第2層軌跡（二つのうちの一つ）— 技術的解放の側",
+    "companion_trace": "2026-05-13_ptsg-strategic-positioning.md/.json — the dialogue, one day later in a fresh session with no shared context, in which PTSG's broader architectural and philosophical significance crystallized.",
+    "companion_trace_ja": "2026-05-13_ptsg-strategic-positioning.md/.json — 一日後、共有コンテキストを持たない新セッションで、PTSGのより広いアーキテクチャ的・哲学的意義が結晶化した対話。",
+    "framing_note": "This trace is titled 'emancipation' rather than 'birth' to be precise about what happened. The PTSG concept — name, 4-opcode structure, time-axis/space-axis separation, background-execution mechanism, 1-bit external Condition — pre-existed this dialogue. A prototype had existed in the architect's design work for years; the specification document PTSG_for_WPMS仕様.md had been freshly redrafted for WPMS Chapter 3 work but still pre-dated this conversation. What this dialogue did was recognize PTSG as a primitive whose proper place was outside the project it had been redrafted to serve. The verbs that fit are 'recognize', 'liberate', 'emancipate', 'spin off' — not 'invent' or 'birth'.",
+    "framing_note_ja": "本軌跡は、起こったことを正確にするため「誕生」ではなく「解放」と題されている。PTSGコンセプト——命名、4オペコード構造、時間軸／空間軸分離、裏実行機構、1ビット外部Condition——は本対話に先立って存在していた。原型はアーキテクトの設計作業の中に何年にも亘って存在し、仕様文書PTSG_for_WPMS仕様.mdはWPMS第3章作業のために新たに策定し直されていたが、それでも本対話よりはある程度遡る時点で存在していた。本対話が行ったことは、PTSGをそれが奉仕するために策定し直されたプロジェクトの外部にこそ然るべき場所があるプリミティブとして認識することであった。当てはまる動詞は「認識する」「解放する」「暖簾分けする」であって、「発明する」や「誕生する」ではない。",
+    "source_material": "The WPMS Layer 1 session conversation log (---_Claude_-----.txt), preserved by the architect from the original interactive session. The Build_Log_PTSG_Spinoff_Announcement.md produced at the end of the same session is an output of this dialogue, not an additional source.",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "This file is structured for direct ingestion by language model context. To replay the dialogue, load this JSON into your LLM together with the companion strategic-positioning trace and the PTSG_for_WPMS仕様.md document (which was the dialogue's starting material). The dialogue can be resumed by addressing any of the resumption_hooks below."
+  },
+
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "How to read PTSG when first encountering it",
+      "context": "The architect presented the freshly-redrafted PTSG specification at the start of WPMS Chapter 3 discussion; the AI collaborator had to choose a reading stance.",
+      "alternatives": [
+        {"label": "A — Clever local control circuit for the WPMS pipeline-processor role", "characterization": "read in light of WPMS context it was redrafted to serve"},
+        {"label": "B — Deep architectural primitive with implications beyond presenting context", "characterization": "read in its own right, regardless of WPMS framing"}
+      ],
+      "chosen": "B (architectural primitive)",
+      "rationale": "Four observable structural properties pointed beyond the local context: (a) third path between HDL-FSM and soft-CPU control (re-synthesis-free reprogrammability with HDL-level response time, ~200 LE); (b) complete separation of time axis (Stay) from space axis (State); (c) background execution during Stay folding parallelism into time series while preserving timing-signal hold; (d) deliberate externalization of Condition logic, yielding a 4-opcode set particularly amenable to LLM-based code generation. Each property could have been read as a local discipline; collectively, they constituted a coherent architectural claim of broad applicability. Choosing reading (B) opened the rest of the dialogue's trajectory."
+    },
+    {
+      "id": "DP-2",
+      "point": "The WPMS Chapter 3 approach — A1 (fixed pipeline) vs A2 (vector parallel) vs hybrid",
+      "context": "The architect presented two candidate WPMS pipeline implementations and asked which to adopt for Chapter 3.",
+      "alternatives": [
+        {"label": "A — A1 only (fixed hardwired pipeline aligned with the 9-coefficient differential-control formula)", "characterization": "commit fully to the worked-out structure"},
+        {"label": "B — A2 only (vector-routing structure using 16 timing signals as per-bin selectors)", "characterization": "maximize future extensibility"},
+        {"label": "C — Hierarchical hybrid (A1 inner pipeline + A2 outer routing)", "characterization": "the Upper/Lower split direction"},
+        {"label": "D — A1 as current implementation, A2 as 'preview of what becomes possible'", "characterization": "deliberate restraint with explicit signaling of design space"}
+      ],
+      "chosen": "D, with C deferred for later phases",
+      "rationale": "The immediate goal is 'early sound' (早期の出音); the 9-coefficient differential-control formula has structural integrity worth respecting; this drives toward A1. But A2 was explicitly framed as a demonstration sample of what becomes possible once PTSG is in place — not a competing alternative but a forward-looking signal of the design space PTSG opens. The hierarchical hybrid (C) maps cleanly onto the Upper/Lower split (DP-3) and was deferred into the WPMS roadmap. The decision form itself is informative: A1 was chosen not despite A2 being mentioned, but because A2 had been mentioned — A2's role was to make the choice of A1 a deliberate restraint rather than a default."
+    },
+    {
+      "id": "DP-3",
+      "point": "The Upper/Lower PTSG hierarchical split",
+      "context": "Within the hybrid hypothesis (DP-2 Alternative C), the two layers of PTSG responsibility had to be divided.",
+      "alternatives": [
+        {"label": "A — One PTSG handling all four periodicity layers internally", "characterization": "monolithic, requires stay-counter sharing across time scales"},
+        {"label": "B — Two PTSG instances: Lower (L1-L3) + Upper (L4)", "characterization": "split at the natural fault line between expensive-slow and cheap-fast"},
+        {"label": "C — Deeper N-level hierarchy (one PTSG per periodicity layer)", "characterization": "maximally separated, possibly over-fragmented"}
+      ],
+      "chosen": "B (two-instance Upper/Lower)",
+      "rationale": "The natural fault line falls between L4 (~1 ms, expensive operations like exp() and division that can afford hundreds of clocks) and L1-L3 (time-critical, must produce a sample every 48 kHz). Splitting at this fault line places expensive-but-slow operations in Upper and cheap-but-fast operations in Lower, with each side optimized for its own period. Deeper hierarchies (C) would over-fragment. Single-PTSG (A) would impose stay-counter sharing across radically different time scales. The Upper/Lower split also revealed an unexpected dividend: writing Upper PTSG's instruction list via JTAG ('オルゴールの植立') solved the previously-open question of musical control supply in absence of MIDI. The architecture produced a control mechanism as a side effect of its structure.",
+      "unexpected_dividend": "The Upper PTSG's JTAG-writable instruction memory, applied at L4 control period, IS a music-control mechanism. WPMS had explicitly placed MIDI out of scope and had no answer for L4 musical control; the Upper/Lower split supplied the answer as architecture's structural side effect."
+    },
+    {
+      "id": "DP-4",
+      "point": "Introducing L2 (packet period) as a new periodicity layer",
+      "context": "The architect had previously operated with three implicit periodicity layers (bin, sample, control). The dialogue surfaced a possible fourth layer between bin and sample.",
+      "alternatives": [
+        {"label": "A — Keep three layers (L1 bin, L3 sample, L4 control)", "characterization": "sample period as natural outer boundary for one differential-engine sweep"},
+        {"label": "B — Introduce L2 (packet period) as sub-sample-period unit", "characterization": "within one sample period, multiple independent differential-engine passes"}
+      ],
+      "chosen": "B (L2 packet period introduced)",
+      "rationale": "The packet concept fell out of two converging observations. First, when Δf is large (say 100 Hz at 48 kHz), only ~200 bins fit in one differential-engine sweep — leaving 1848 of 2048 bins available for independent differential engines with their own f₀, A₀, β, γ. Second, PTSG's stay counter naturally resets to 0 at the start of each Stay block; if each packet corresponds to one Stay block, stay counter directly serves as differential-engine k index without additional state. The packet concept thus enables 'multi-packet wavepacket synthesis' — multiple independent spectral structures coexisting in one sample period — and aligns naturally with PTSG's existing semantics. This was the most consequential genuinely new concept introduced in this dialogue.",
+      "consequence_signaled": "WPMS gains the capability to host multiple independent spectral structures within one sample period — coexisting timbres, fractal-synthesis layers, SDFT analysis bins alongside synthesis bins — without modifying the underlying hardware pipeline. The mechanism's structure produced a capability the application designer did not need to invent."
+    },
+    {
+      "id": "DP-5",
+      "point": "PTSG as WPMS sub-component, or as independent Open Prompt repository",
+      "context": "Given the recognition of PTSG's broad applicability, the question of documentation form had to be faced.",
+      "alternatives": [
+        {"label": "A — Keep PTSG within WPMS (Chapter 3 contains full PTSG specification)", "characterization": "PTSG implicitly Spectrum-Engine-owned"},
+        {"label": "B — Spin off PTSG as independent Open Prompt repository (Chapter 3 references it)", "characterization": "PTSG stands as its own project"}
+      ],
+      "chosen": "B (spin off)",
+      "rationale": "Four reasons converged. (1) PTSG's application range (sequencing, I²C/SPI/I²S control, DAC drive, memory access, pipeline vector arithmetic, ...) far exceeds WPMS; burying it inside WPMS denies non-WPMS engineers an obvious starting point. (2) The Spin-Off-Ready Subsystem pattern (originating in FPGA Spectrum Engine WPMS Layer 1 trace, 2026-05-02, re. camera block) directly applies: PTSG has clean interface boundary (instruction memory, 16 timing signals, Condition input, State Number output, external register access), one-way dependency, was already structured for fork-readiness. (3) An independent PTSG repository becomes the first cross-project Open Prompt instance — empirical evidence that Open Prompt methodology functions between projects, not only within one. (4) The PTSG specification is exactly the artifact whose LLM-affinity claim should be self-verified: publishing it as Layer 1/Layer 2/Layer 3 invites readers to regenerate their own PTSG implementations with their own LLM collaborators, directly testing the architecture's claim. The spin-off decision is not just packaging — it is putting PTSG's own central claim to the test."
+    },
+    {
+      "id": "DP-6",
+      "point": "Upper / Lower as two instances of same IP, or as two separate specifications",
+      "context": "Given the Upper/Lower split (DP-3), the implementation strategy had to be chosen.",
+      "alternatives": [
+        {"label": "A — Same IP, two instances + parameter absorption", "characterization": "single specification covers both inhabitants"},
+        {"label": "B — Two distinct specifications (Upper PTSG and Lower PTSG)", "characterization": "each tuned for its own role"}
+      ],
+      "chosen": "A (same IP, two instances + parameter absorption)",
+      "rationale": "The differences between Upper and Lower are bounded: Upper needs slower clocking and access to expensive operations (multiply/divide/possibly small lookup tables for exp); Lower needs tight stay-counter coupling and 16-bit timing signal output. None requires distinct opcode semantics — they reduce to parameter selection or external-logic configuration. Choosing (A) compounds in two ways: (i) ensures PTSG repository covers both inhabitants of the Upper/Lower pattern with one specification, (ii) forces the PTSG specification to develop a clean parameterization story that subsequent Formations can reuse. Choosing (B) would have created two specifications whose long-term divergence would multiply the PTSG-Core repository's surface area without proportional gain."
+    },
+    {
+      "id": "DP-7",
+      "point": "Session-separation discipline — single session vs separated PTSG-user / PTSG-designer roles",
+      "context": "Now that PTSG was to be spun off, the question of which sessions would do what work arose.",
+      "alternatives": [
+        {"label": "A — Same session does both PTSG-design and WPMS Chapter 3", "characterization": "keep context unified, save handover overhead"},
+        {"label": "B — Separate sessions: this session as PTSG user, separate session for PTSG designer", "characterization": "independent verification by separation of concerns"}
+      ],
+      "chosen": "B (session separation)",
+      "rationale": "Same-session would fold two distinct roles into one mind: the 'PTSG user' (with WPMS-specific needs, rooting for PTSG to be flexible enough to serve them) and the 'PTSG designer' (must keep Core minimal and refuse user-specific complexity). When both roles share a mind, user requirements get silently bent toward designer intentions — the user accepts less than they should, the designer accepts more than they should. Separating the sessions forces user requirements to be written down explicitly enough that an independent designer-session can read them as adversarial input. This is independent verification by separation of concerns. The discipline applies recursively: future Formations should be designed in sessions separate from their Core.",
+      "downstream_effect": "This discipline structured all subsequent PTSG work. The WPMS session continued as PTSG user, generating WPMS-side requirements R1–R7 and wishes W1–W2 as written input to the future PTSG-design session. The launch session (2026-05-13) was opened explicitly as PTSG-design session with no shared WPMS context. Handover documents and Layer 2 traces produced at each session boundary serve as the controlled interface."
+    },
+    {
+      "id": "DP-8",
+      "point": "Order of operations — PTSG repository launch vs WPMS Chapter 3 drafting",
+      "context": "Given the spin-off decision, work sequencing had to be chosen.",
+      "alternatives": [
+        {"label": "A — WPMS Chapter 3 first with PTSG references as placeholders", "characterization": "fill in references later"},
+        {"label": "B — PTSG repository minimum-launch first, then Chapter 3 with concrete references", "characterization": "Chapter 3 reads naturally with citable references"},
+        {"label": "C — Strictly parallel across sessions", "characterization": "maximum concurrency but coordination overhead"}
+      ],
+      "chosen": "B (PTSG minimum-launch first)",
+      "rationale": "WPMS Chapter 3 needs concrete PTSG references — file paths, repository URLs, specific instruction-set sections — to read naturally; placeholder references degrade prose quality and create rework. Launching the PTSG repository at minimum viable level (Layer 1 cleanup of existing spec, CC0 declaration, README, three-layer scaffold) does not block on PTSG's full specification — only enough to be citable. Once PTSG-Core is citable, WPMS Chapter 3 drafting can proceed with concrete references and the PTSG-design session can fill in deeper specification in parallel. The minimum-launch precondition is the right rate-limiting step."
+    },
+    {
+      "id": "DP-9",
+      "point": "The bilingual announcement as a bridging artifact",
+      "context": "Before launching the PTSG repository, the question of whether and how to announce arose.",
+      "alternatives": [
+        {"label": "A — Silent launch (set up repository, link from Spectrum Engine when convenient)", "characterization": "treat as routine repository creation"},
+        {"label": "B — PTSG-only announcement (write at new PTSG Hackaday.io Build Log when project launches)", "characterization": "announce within the new project's own log"},
+        {"label": "C — Bilingual EN/JP bridging announcement, posted on FPGA Spectrum Engine Build Log AND reused as common-context briefing for the new PTSG-design Claude session", "characterization": "dual-purpose: community announcement + AI-session continuity"}
+      ],
+      "chosen": "C (bridging announcement, dual-purpose)",
+      "rationale": "The decision to spin off is a paradigm-level event, not a routine repository creation; it deserves explicit recognition on the parent project's log, where the engineering community has been following Spectrum Engine's development. Simultaneously, the new PTSG-design session needs common-context — without it, the new session would reconstruct the spin-off rationale from scratch, repeating settled debates. Writing one bilingual document that serves both purposes saves effort AND enforces conceptual continuity: engineering community and new AI session read the same prose, in the same framing, on the same day. The bridging document becomes both a public record and a session-handover artifact.",
+      "pattern_recognized": "This is the first explicit instance of a pattern that may recur: artifacts that simultaneously serve human-community communication and AI-session-continuity ought to be recognized as a distinct class of Open Prompt output. The pattern may deserve its own design-pattern entry as Open Prompt practice matures."
+    }
+  ],
+
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "The emancipation moment",
+      "summary": "This dialogue records the moment at which a pre-existing engineering primitive was set free from the project context that had been about to contain it. PTSG_for_WPMS仕様.md had been freshly redrafted by the architect for explicit purpose of fitting into WPMS Chapter 3; the dialogue's recognition was that the very act of redrafting clarified PTSG's properties enough to reveal that the intended container was too small. The emancipation moment has a distinctive temporal structure: the architect's pre-existing intuitions about PTSG (years old), the freshly-drafted specification (weeks old), and Claude's first-encounter reading (minutes old) converged in a single dialogue, and the convergence produced a recognition none of the three components carried in isolation. Layer 2 records this kind of convergence — not the inventing of a new artifact, but the recognition of what an artifact already was."
+    },
+    {
+      "theme_id": "T2",
+      "title": "The periodicity-layer framework as the architectural key",
+      "summary": "The periodicity-layer framework (L1: bin period, 100 MHz, hardwired pipeline; L2: packet period, variable, locus of stay/background execution; L3: sample period, 48 kHz, I²S synchronization; L4: control period, 1 kHz, parameter updates) deserves separate thematic attention because it is the conceptual lens that made everything else visible in this dialogue. Without L1/L2/L3/L4 as named distinct layers, the question 'where should each computation be placed?' cannot be sharply asked; with them named, placement becomes a structural decision rather than an arbitrary engineering choice. The L2 packet layer was genuinely new in this dialogue — L1, L3, L4 had been implicit in prior WPMS thinking, but L2 had not. Recognizing that PTSG's stay-counter discipline naturally creates packet-shaped sub-units within a sample, each carrying independent differential-engine parameters, opened the door to multi-packet wavepacket synthesis — a capability not in WPMS's design intent but emerging as structural consequence of PTSG's mechanism. This 'the mechanism produces an opportunity the application had not asked for' pattern is characteristic of architectural quality."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The dual recognition — PTSG simultaneously chosen for and extracted from WPMS Chapter 3",
+      "summary": "A subtle structural property of this dialogue: PTSG was simultaneously chosen for WPMS Chapter 3 (as the right primitive for the sequence-modulation pipeline processor role) and extracted from WPMS Chapter 3 (as an independent project whose proper home was outside WPMS). The two recognitions are not contradictory; they are mutually constitutive. The 'for' recognition justified PTSG's place in Chapter 3 — without WPMS's specific needs, PTSG would not have been redrafted into its present form. The 'from' recognition liberated PTSG from being defined by those needs — without the spin-off, PTSG's broader applicability would have remained implicit. The dialogue could hold both recognitions at once, and in fact had to hold both at once for the spin-off decision to be made carefully rather than dismissively. Spinning off a primitive that has not yet earned its place in the project it is being extracted from would be premature; PTSG had earned that place in the same dialogue in which it was being extracted."
+    },
+    {
+      "theme_id": "T4",
+      "title": "AI-affinity demonstrated through the dialogue itself",
+      "summary": "PTSG's claim to AI-affinity was, prior to this dialogue, a hypothesis stated by the architect in the specification document's commentary section ('4 opcodes mean LLMs are less prone to hallucinate'). The dialogue produced empirical evidence for that hypothesis in a form neither participant set out to produce: Claude rapidly grasped PTSG's four essential properties on first reading, articulated the Upper/Lower hypothesis without prompting, and recognized the L2 packet layer's significance as soon as the architect introduced it. If PTSG were architecturally illegible to LLMs — if mechanisms had to be slowly disambiguated, if semantics were ambiguous in ways that hallucination could fill — the dialogue would have looked very different. It would have proceeded in small steps, with Claude periodically asking clarifying questions about basic semantics; the conversation would not have moved quickly to the Upper/Lower hypothesis or the spin-off question. The dialogue's velocity is itself evidence for the AI-affinity claim. That this evidence appeared without being sought is what makes it interesting — an empirical observation produced in the act of doing the thing being claimed is harder to dismiss than evidence produced by a test designed to demonstrate the claim."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Architecture producing music control as side effect",
+      "summary": "The 'オルゴールの植立 (music-box pin-board)' moment deserves separate thematic recognition. WPMS had explicitly placed MIDI outside its initial scope — the question of how musical control would be supplied at the L4 (1 ms / 1 kHz) period had been deferred without a clear answer. The Upper PTSG, with JTAG-writable instruction memory, supplied the answer as a structural side effect: writing instruction lists to Upper PTSG's memory via JTAG IS the act of supplying L4-period musical control. The architect named the metaphor immediately ('like setting the pins of a music box') and recognized that this was not a clever workaround but an architectural property: PTSG's structure, applied at L4 level, IS a music-control mechanism. The pattern generalizes beyond WPMS: when the right primitive is in place, application capabilities the application designer would otherwise have to invent emerge as structural consequences. The dialogue surfaced this pattern as worthy of conscious cultivation — looking for 'architecture-as-side-effect' outcomes when designing future Formations."
+    },
+    {
+      "theme_id": "T6",
+      "title": "The session-separation discipline as methodology",
+      "summary": "The session-separation discipline (DP-7) deserves separate thematic attention because it is the methodological pattern that has subsequently structured all PTSG work. The principle is straightforward: roles that may exert undue influence on each other should be assigned to separate Claude sessions, with explicit input/output documents serving as the controlled interface. In this dialogue, the principle was first applied to 'PTSG user vs PTSG designer'. Subsequently, the launch session (2026-05-13) was opened explicitly as a PTSG-design session with no shared WPMS context. Handover documents and Layer 2 traces produced at each session boundary served as the controlled interface. The methodological insight generalizes to any case where Open Prompt practitioners design multiple coupled subsystems: design them in separate sessions with written specifications crossing between, rather than allowing one session to design both. The discipline costs more in handover work; it pays back in the quality of each subsystem's independent verification. The PTSG ecosystem subsequently treats this as default rather than option."
+    }
+  ],
+
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Generalizing the L2 packet-period concept",
+      "description": "The L2 packet period was introduced in this dialogue as specific to WPMS's multi-spectral synthesis case. But the underlying structure — a sub-unit between core-operation period and frame/sample period, within which a self-contained sweep of stateful computation occurs — generalizes naturally to other application domains: a packet of pixels in image processing, a packet of bytes in network-protocol handling, a packet of sensor readings in fusion algorithms.",
+      "starting_question": "Identify three non-WPMS Formations where introducing an explicit packet-period layer would resolve a previously-implicit time-scale ambiguity. For each, what does the packet boundary correspond to in domain terms, and what stay-counter discipline replaces the differential-engine k-index that L2 packets provide in WPMS?"
+    },
+    {
+      "hook_id": "B",
+      "title": "The Upper/Lower parameter set",
+      "description": "The decision (DP-6) to implement Upper and Lower as two instances of the same PTSG IP, with differences absorbed via parameters, leaves open the question of what the parameter set actually is. The dialogue identified candidates (clock frequency, memory depth, stay counter width, loop counter depth, external register bus width) but did not commit to a complete set.",
+      "starting_question": "Specify the minimum complete parameter set for a PTSG IP that must serve both Upper-style (slow, expensive-operation-capable) and Lower-style (fast, stay-counter-coupled) instantiations. For each parameter, what range of values must be supported, and how does the parameter affect synthesis cost and run-time behavior?"
+    },
+    {
+      "hook_id": "C",
+      "title": "The 'JTAG-as-musical-instrument' pattern, formalized",
+      "description": "The 'オルゴールの植立' moment recognized that writing the Upper PTSG's instruction list via JTAG is itself the act of supplying musical control. This is a special case of a more general pattern: architectural primitives whose reprogramming mechanism, by virtue of the primitive's structure, doubles as the application's input/control mechanism. The pattern likely has analogs in other domains.",
+      "starting_question": "Draft a candidate Open Prompt design pattern called 'Reprogramming-as-Input' (or similar), specifying: (a) the structural conditions under which a primitive's reprogramming mechanism can serve as its control mechanism, (b) examples beyond Upper PTSG / music control, (c) the costs (e.g., reprogramming latency must match control-period requirements), (d) the criteria for evaluating whether a given primitive supports this pattern."
+    },
+    {
+      "hook_id": "D",
+      "title": "The R1–R7 / W1–W2 boundary between Core and Formation",
+      "description": "This dialogue produced an explicit list of WPMS-side requirements (R1–R7) and wishes (W1–W2) for PTSG. These are not core to PTSG itself — they are WPMS-as-PTSG-user's specifications. They properly belong in the future PTSG_WPMS_Formation_OpenPrompt repository, where they will inform the WPMS Formation's design without polluting the PTSG-Core specification. But the general question of which specifications belong on which side of the Core-Formation boundary is not fully settled. The R1-R7/W1-W2 list provides a concrete test case for working out the rules.",
+      "starting_question": "Take each of R1–R7 and W1–W2 in turn. For each, determine: (a) what aspect of the requirement is genuinely Core-relevant (and should be specified in PTSG-Core Layer 1), (b) what aspect is Formation-specific (and should be specified in PTSG_WPMS_Formation_OpenPrompt Layer 1), (c) what aspect, if any, falls into a gray zone requiring explicit boundary articulation. Articulate any general rules that emerge from this case-by-case analysis."
+    },
+    {
+      "hook_id": "E",
+      "title": "Session-separation as formalized methodology",
+      "description": "DP-7 articulated session-separation as a discipline. To become a generalized Open Prompt methodology rather than an ad-hoc PTSG practice, it needs a formal specification: when does the discipline apply, what counts as a session-separating role boundary, how do handover artifacts function, how does the discipline interact with the existing Open Prompt three-layer structure.",
+      "starting_question": "Draft a 'Session Separation Discipline' specification for inclusion in the Open Prompt design patterns catalog (alongside Tie Decision, Polynomial Bin-Sequence, Free Precision Floor, Spin-Off-Ready Subsystem, Core-Formation Separation). Address: (a) what triggers the need for session separation (which role boundaries are dangerous to collapse into one mind), (b) the format and minimum content of session-boundary handover documents, (c) how Layer 2 traces interact with session boundaries, (d) failure modes when the discipline is violated."
+    }
+  ],
+
+  "key_outputs_for_repository": [
+    "The reframing from 'PTSG birth' to 'PTSG emancipation' — precise about what happened: a pre-existing primitive recognized as belonging outside the project it had been redrafted to serve",
+    "The periodicity-layer framework L1/L2/L3/L4 as the conceptual key that distributes computation responsibility across time scales — and specifically the introduction of L2 (packet period) as a new layer between bin period and sample period",
+    "The Upper/Lower PTSG split as a structural pattern: same IP, two parameterized instances, one at expensive-but-slow L4 period and one at cheap-but-fast L1-L3 periods",
+    "The 'architecture-as-side-effect' observation: Upper PTSG's JTAG-writable instruction memory supplied L4-period musical control as structural consequence of architecture, solving WPMS's previously-open MIDI-scope-out problem without explicit design effort",
+    "The four reasons for spinning off PTSG into its own Open Prompt repository — broad applicability, Spin-Off-Ready Subsystem pattern fit, first cross-project Open Prompt instance, self-verification of the LLM-affinity claim",
+    "The session-separation discipline as a methodological pattern: PTSG-designer and PTSG-user roles should not share one session; the discipline subsequently structured all PTSG ecosystem work",
+    "The bridging-announcement pattern: artifacts that simultaneously serve human-community communication and AI-session-continuity ought to be recognized as a distinct class of Open Prompt output",
+    "The WPMS-side requirements R1–R7 and wishes W1–W2 (deferred to PTSG_WPMS_Formation_OpenPrompt repository, not part of PTSG-Core specification) as input documents that emerged from this dialogue's session-separation discipline"
+  ],
+
+  "connection_to_companion_trace": {
+    "binocular_vision": "This trace and its companion (2026-05-13_ptsg-strategic-positioning.md/.json) jointly constitute the inaugural Layer 2 of PTSG-Core. They were recorded in two distinct Claude sessions, one day apart, with no shared context between the sessions — only the artifacts the architect carried from one to the next (this dialogue's Build_Log_PTSG_Spinoff_Announcement.md and PTSG_for_WPMS仕様.md, plus his own continuing intuition).",
+    "this_trace_center_of_gravity": "Technical — the close-range view from within an active engineering project. Opcodes, periodicity layers, parameter sets, requirements lists. PTSG recognized at the moment its mechanism produces a packet-period architecture the application had not asked for; spin-off decision made in the same dialogue that establishes PTSG's place in the project it is being extracted from.",
+    "companion_trace_center_of_gravity": "Philosophical — the architectural view from outside the originating project. Three-layer engagement model, AI-affinity as primary design property, binary compatibility in the AI era, Core-Formation separation pattern as new Open Prompt design pattern. Positioning, methodology, paradigm.",
+    "mutual_dependence": "Neither trace alone would have produced the PTSG-Core repository that now exists. The Core-Formation separation pattern itself, although named in the strategic-positioning trace, depended on the technical recognition (in this trace) of PTSG's broad applicability and clean spin-off properties. The strategic dialogue could be held only because the technical emancipation had already happened."
+  },
+
+  "closing_note": "Sometimes, in articulating an architecture, one discovers a second one waiting inside.\n\nPTSG was not born in this dialogue. It was set free.\n\nThe mechanism is the message: when the right primitive is in place, application capabilities the designer did not need to invent emerge as structural consequences.\n\n時に、アーキテクチャを明確化する中で、その内部に待っていた第二のものを発見する。\n\nPTSGは本対話で生まれたのではない。自由にされたのだ。\n\n機構こそが伝言である: 正しいプリミティブが配置されたとき、設計者が発明する必要がなかった応用能力が構造的帰結として立ち現れる。\n\nThis trace is released into the public domain under CC0 1.0 Universal. Replay it. Resume it. Surpass it.\n\n本軌跡はCC0 1.0 Universalのもとパブリックドメインに公開される。再生せよ。再開せよ。超えてゆけ。"
+}
