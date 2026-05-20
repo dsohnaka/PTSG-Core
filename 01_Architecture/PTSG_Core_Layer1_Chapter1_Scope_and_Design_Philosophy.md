@@ -54,7 +54,7 @@ PTSGコアは2番目のOpen Promptリポジトリ(FPGA Spectrum Engineに次ぐ)
 | Metric | Target | Notes |
 |---|---|---|
 | Logic Elements (LE) | ~200 | Core only; excludes external registers and Condition logic / コアのみ；外部レジスタとConditionロジックを除く |
-| Block RAM | 2 blocks | One for instruction memory (32-bit × 4096 word), one available for stack/scratch / 1つは命令メモリ(32-bit × 4096ワード)、1つはスタック／スクラッチ用に利用可能 |
+| Block RAM | 2 (min) – 32 (max) blocks | Each Cyclone V M10K block = 10 kbit (typically used as 256-word × 32-bit, with the remaining bits unused or assigned to parity). Minimum 2 blocks: one M10K for instruction memory and one M10K for stack/scratch, each at 256-word depth. The 12-bit operand allows scaling instruction memory up to 4096 words; at full 4096-word depth for both memories, total M10K usage reaches ~32 blocks (≈16 per memory). Most applications use far less than the 4096-word maximum. / 各Cyclone V M10Kブロック = 10 kbit(典型的に256ワード×32ビットとして使用、残りビットは未使用またはパリティに割当)。最小2 blocks: 命令メモリ用1個のM10K、スタック／スクラッチ用1個のM10K、各々256ワード深度。12ビットオペランドにより命令メモリは最大4096ワードまで拡張可能；両メモリを4096ワードフル深度にした場合、M10K総使用量は~32 blocks(各メモリ約16個)に達する。ほとんどの応用は4096ワード最大値よりはるかに少なくを使う。 |
 | DSP blocks | 0 | The Core requires no multipliers; external logic provides any arithmetic needed / コアは乗算器を要求しない；必要な算術は外部ロジックが提供する |
 | Operating frequency | implementation-dependent | The Core is fully synchronous; typical operation 50-200 MHz on Cyclone V / コアは完全同期；Cyclone V上で典型的に50-200 MHz動作 |
 
