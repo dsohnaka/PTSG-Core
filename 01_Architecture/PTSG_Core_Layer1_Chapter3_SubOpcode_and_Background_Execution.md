@@ -11,6 +11,26 @@
 
 ---
 
+> ### Version Note — v1.1 (Bug-Fix + Deliberation-Outcome Revision) / バージョンノート — v1.1（バグ修正＋協議成果改訂）
+>
+> **This is the v1.1 revision of Chapter 3.** It incorporates the outcomes of the 2026-05-23 Gemini 3.5 Flash deliberation (Layer 2 trace `02_Reasoning_Traces/contributed/dsohnaka/specification_deliberation/2026-05-23_ptsg-loop-dynamics-deliberation-by-gemini.md`), as decided by the architect in consultation with the amanuensis. The changes are substantial and **consciously revise several v1.0 Fixed decisions** — this is acknowledged, not accidental.
+>
+> **Major v1.1 changes:**
+> 1. **The scheduling model is revised (§ 3.3a, new).** v1.0 held that *internal mode = always backward-scheduled, external mode = always forward-scheduled* (C3-F2/F3/F4). v1.1 introduces the **Prog End** command: within a Stay window, scheduling is now determined by **position relative to Prog End** — internal-mode commands *before* Prog End execute immediately (forward); those *after* Prog End are queued (backward, firing at Stay-timeup). This resolves the v1.0 defect that a Loop could not iterate a background sequence, and eliminates the complex backward-scheduling hardware for multi-clock operations.
+> 2. **The loop counter model is revised (§ 3.11).** Single primary counter (was 1–4); up-count from 0 (was decrement); auto-clear to 0 on exit; 1-clock match-flag outputs (loop_cnt_match, stay_cnt_match, prescaler_match). Tie C3-T9 (loop-counter-at-zero) is **dissolved** by the up-count transition.
+> 3. **Insertion timing (Tie C3-T8) is resolved** as (B) deferred-to-Stay-timeup, for safety; the current WPMS Formation needs no advanced insertion.
+> 4. **Five new Ties** (C3-T10 through C3-T14) are recorded, deferred to the prescaler chapter (§ 3.13, § 3.14).
+>
+> **これは第3章の v1.1 改訂である。** 2026-05-23 の Gemini 3.5 Flash 協議(Layer 2 軌跡)の成果を、アーキテクトが祐筆と協議して決定した形で組み込む。変更は実質的であり、**いくつかの v1.0 Fixed 決定を意識的に改訂する**——これは偶発ではなく自覚的である。
+>
+> **主要な v1.1 変更:**
+> 1. **スケジューリングモデルの改訂(§ 3.3a、新設)。** v1.0 は*内部モード＝常に後方スケジュール、外部モード＝常に前方スケジュール*(C3-F2/F3/F4)としていた。v1.1 は **Prog End** コマンドを導入する: Stayウィンドウ内で、スケジューリングは今や **Prog End に対する位置**によって決定される——Prog End の*前*の内部モードコマンドは即時実行(前方)、*後*のものはキュー(後方、Stay-timeup で発火)。これは Loop が裏シーケンスを反復できなかった v1.0 欠陥を解決し、複数クロック演算の複雑な後方スケジューリングハードウェアを排除する。
+> 2. **ループカウンタモデルの改訂(§ 3.11)。** 単一プライマリカウンタ(旧 1-4)；0 からのアップカウント(旧デクリメント)；脱出時 0 へ自動クリア；1クロックの一致フラグ出力(loop_cnt_match、stay_cnt_match、prescaler_match)。Tie C3-T9(ループカウンタゼロ)はアップカウント移行により**消滅**する。
+> 3. **挿入タイミング(Tie C3-T8)を解決** —— 安全性のため (B) Stay-timeup 繰り延べ；現在の WPMS Formation は高度な挿入を必要としない。
+> 4. **五つの新 Tie**(C3-T10〜C3-T14)が記録され、プリスケーラ章へ繰り延べられる(§ 3.13、§ 3.14)。
+
+---
+
 ## 3.1 Purpose of this Chapter / 本章の目的
 
 Chapter 2 specified PTSG-Core's **static instruction-set surface**: what each opcode does, what the operand fields encode, what the timing signals output. Chapter 2 deliberately stopped at the boundary of dynamic behavior — behaviors involving interaction between adjacent instructions or between the instruction stream and the Stay-counter state. **This chapter crosses that boundary.**
@@ -29,9 +49,9 @@ The chapter's three principal contributions are:
 
 **2. サブシーケンスコール／リターン、ネストループ、外部割り込みを支持する情報保持機構。** いくつかの別個のPTSG挙動——Branch-with-Condition-false(自動退避)、Sub-sequence Call(自動退避とコール)、Base Set(古いベースアドレスのプッシュ)、Loop(スタックされたベースを使用)、Return(復元)、そして Insertion(自動退避を伴う上書き)——すべてが共通の機構に依存する: **内部情報保持レジスタ**、保持レジスタ単独で支持できる以上のネスティングのためのオプションの**外部スタックメモリ**で拡張される。本章はデータレイアウト、自動退避プロトコル、外部スタックバスインターフェースを指定する。
 
-**3. The loop counter resource model.** The Loop sub-opcode (§ 2.8) decrements a counter and conditionally jumps to the base address. The Core provides a small set of loop counters; their number, their selection mechanism, their initialization, and their externalization for use by pipeline vector arithmetic (as anticipated in the original PTSG specification) are specified here.
+**3. The loop counter resource model.** The Loop sub-opcode (§ 2.8) up-counts a counter and, while it remains below its target, jumps to the base address (v1.1; was decrement in v1.0). The Core provides a single primary loop counter; its width, target source, exit behavior, match-flag output, and externalization for use by pipeline vector arithmetic (as anticipated in the original PTSG specification) are specified here.
 
-**3. ループカウンタリソースモデル。** Loop サブオペコード(§ 2.8)はカウンタをデクリメントし条件付きでベースアドレスにジャンプする。コアはループカウンタの小さなセットを提供する；その数、選択機構、初期化、そしてパイプラインベクタ算術で使用するための外部化(オリジナルPTSG仕様で予期されているように)はここで指定される。
+**3. ループカウンタリソースモデル。** Loop サブオペコード(§ 2.8)はカウンタをアップカウントし、目標未満の間はベースアドレスにジャンプする(v1.1；v1.0 ではデクリメント)。コアは単一のプライマリ・ループカウンタを提供する；その幅、目標ソース、脱出挙動、一致フラグ出力、そしてパイプラインベクタ算術で使用するための外部化(オリジナルPTSG仕様で予期されているように)はここで指定される。
 
 **This chapter contains the most timing-sensitive material in PTSG-Core Layer 1.** Some timing details have multiple reasonable interpretations; where this is the case, the alternatives are recorded as Ties in § 3.13 with community discussion explicitly invited. The contributor anticipates that **several Chapter 3 Tie items will be the subject of active discussion in the coming weeks**, both with current contributors and with Formation authors as the first Formations are designed.
 
@@ -97,9 +117,9 @@ The two modes coexist within one Stay window. A typical pattern combining both:
   State N+4:  Stay (operand = M)                           ← halt here until stay-timeup
 ```
 
-In this pattern: the external register writes to Reg_A and Reg_B trigger at clocks 1 and 2 respectively (assuming Stay Set at clock 0), running concurrently with the wait. The Loop sub-opcode is queued and executes at Stay-timeup, exactly when the wait completes; its effect (decrement loop counter, jump to base address if counter ≠ 0) is applied as Core advances.
+In this pattern: the external register writes to Reg_A and Reg_B trigger at clocks 1 and 2 respectively (assuming Stay Set at clock 0), running concurrently with the wait. The Loop sub-opcode is queued and executes at Stay-timeup, exactly when the wait completes; its effect (increment loop counter, compare to target, jump to base address while below target, else exit and auto-clear) is applied as Core advances. (Under the v1.1 Prog End model, this is the *queued-band* behavior — see § 3.3a.)
 
-このパターンにおいて: Reg_A と Reg_B への外部レジスタ書き込みはそれぞれクロック 1 と 2 でトリガされ、待機と並行して走る。Loop サブオペコードはキューに入り Stay-timeup で実行される、ちょうど待機が完了する時；その効果(ループカウンタをデクリメントし、カウンタが ≠ 0 ならベースアドレスにジャンプ)はコアが進む時に適用される。
+このパターンにおいて: Reg_A と Reg_B への外部レジスタ書き込みはそれぞれクロック 1 と 2 でトリガされ、待機と並行して走る。Loop サブオペコードはキューに入り Stay-timeup で実行される、ちょうど待機が完了する時；その効果(ループカウンタをインクリメント、目標と比較、目標未満の間はベースアドレスにジャンプ、さもなくば脱出し自動クリア)はコアが進む時に適用される。(v1.1 の Prog End モデルの下では、これは*キュー帯域*の挙動である——§ 3.3a 参照。)
 
 **Why the two modes have different timing scheduling.** The asymmetry is architecturally motivated, not arbitrary:
 
@@ -117,7 +137,73 @@ In this pattern: the external register writes to Reg_A and Reg_B trigger at cloc
 
 ---
 
+## 3.3a Prog End and the Revised Scheduling Model (v1.1) / Prog End と改訂されたスケジューリングモデル (v1.1)
+
+> **This section revises the v1.0 model of §§ 3.3–3.5.** In v1.0, scheduling was determined by *mode* (internal = always backward-scheduled; external = always forward-scheduled). The v1.1 deliberation revealed that this model has a defect — a Loop placed in a Stay window can never iterate a background sequence, because internal-mode operations are deferred to Stay-timeup, by which point the window has closed. The fix is the **Prog End** command, which makes scheduling depend on *position*, not mode. Sections 3.4 and 3.5 below remain valid for the *queued* region (after Prog End); this section specifies what changes.
+>
+> **本節は §§ 3.3–3.5 の v1.0 モデルを改訂する。** v1.0 では、スケジューリングは*モード*によって決定された(内部＝常に後方スケジュール；外部＝常に前方スケジュール)。v1.1 協議は、このモデルが欠陥を持つことを明らかにした——Stayウィンドウに置かれた Loop は裏シーケンスを決して反復できない、なぜなら内部モード演算は Stay-timeup へ繰り延べられ、その時点でウィンドウは閉じているからである。修正は **Prog End** コマンドであり、スケジューリングをモードではなく*位置*に依存させる。以下の §§ 3.4 と 3.5 は*キュー*領域(Prog End の後)について有効なままである；本節は何が変わるかを指定する。
+
+### The revised model / 改訂されたモデル
+
+Within a Stay window (opened by Stay Set, § 3.2), the **Prog End** command (internal sub-opcode 6, tentative — Chapter 2 v1.1 § 2.8) divides the window into two bands with different scheduling:
+
+Stayウィンドウ内(Stay Set で開かれる、§ 3.2)で、**Prog End** コマンド(内部サブオペコード 6、暫定 — 第2章 v1.1 § 2.8)はウィンドウを異なるスケジューリングを持つ二つの帯域に分割する:
+
+```
+  State N:    Global (Stay Set)          ← window opens; stay counter starts; timing held
+                                          ┌─────────────────────────────────────────────┐
+  State N+1:  Global (internal, e.g Loop) │  IMMEDIATE BAND (before Prog End)            │
+  State N+2:  Global (internal or ext)    │  Internal-mode commands execute IMMEDIATELY   │
+   ...                                     │  (forward-scheduled). A Loop here CAN iterate │
+                                          │  a background sequence at full speed.         │
+  State N+k:  Global (Prog End)           └── boundary: immediate band ends ──────────────┘
+                                          ┌─────────────────────────────────────────────┐
+  State N+k+1: Global (internal, e.g Loop)│  QUEUED BAND (after Prog End)                │
+   ...                                     │  Internal-mode commands are QUEUED, firing at │
+                                          │  Stay-timeup (backward-scheduled).            │
+  State N+m:  Stay (operand = M)          └── window closes at stay counter = M ──────────┘
+```
+
+- **Immediate band (Stay Set → Prog End):** every internal-mode Global executes *immediately* when reached (forward-scheduled, 1 clock each), while the timing-signal output remains held. A Loop in this band iterates a fast background sequence — the v1.0 limitation is resolved. Sub-sequence Call and Return in this band are *immediate* variants (background subroutine call/return with the timing axis held).
+- **Queued band (after Prog End):** every internal-mode Global is *queued* and fires at Stay-timeup (backward-scheduled). A Loop here is the "big-period" loop that determines the next major transition exactly at timeup. Sub-sequence Call and Return here are *queued* variants (the timeup transition to/from a major subroutine).
+
+- **即時帯域(Stay Set → Prog End):** すべての内部モード Global は到達時に*即時*実行される(前方スケジュール、各1クロック)、タイミング信号出力は保持されたまま。この帯域の Loop は高速な裏シーケンスを反復する——v1.0 制限は解決される。この帯域の Sub-sequence Call と Return は*即時*変種(タイミング軸を保持したままの裏サブルーチンのコール／リターン)。
+- **キュー帯域(Prog End の後):** すべての内部モード Global は*キュー*され Stay-timeup で発火する(後方スケジュール)。ここの Loop はタイムアップでちょうど次の主要遷移を決定する「大周期」ループである。ここの Sub-sequence Call と Return は*キュー*変種(主要サブルーチンへの／からのタイムアップ遷移)。
+
+### Why this is better / なぜこれが優れているか
+
+1. **Background looping works.** The v1.0 defect (a Loop in a Stay window cannot iterate) is resolved: a Loop in the immediate band iterates at full speed while the timing axis is held.
+2. **Backward-scheduling complexity is eliminated.** v1.0's C3-F3 required multi-clock internal operations (e.g., a Return with external stack pop) to be *scheduled backward* so they complete exactly at Stay-timeup — complex hardware. Under v1.1, a queued operation simply *fires at* Stay-timeup and absorbs its own latency as post-timeup fetch wait. No backward scheduling is needed.
+3. **Timing-chart ergonomics.** A queued Loop fires at timeup, so the Stay operand can be written as the *pure* timing-chart value M, without subtracting 1 for the Loop's own clock. This removes a subtraction-stress that is a known hallucination source for AI-generated instruction lists.
+
+1. **裏ループが機能する。** v1.0 欠陥(Stayウィンドウの Loop が反復できない)は解決される: 即時帯域の Loop はタイミング軸が保持されたまま高速に反復する。
+2. **後方スケジューリングの複雑性が排除される。** v1.0 の C3-F3 は複数クロック内部演算(例: 外部スタックポップを伴う Return)を Stay-timeup でちょうど完了するよう*後方スケジュール*することを要求した——複雑なハードウェア。v1.1 では、キュー演算は単に Stay-timeup で*発火*し、自身のレイテンシをタイムアップ後のフェッチ待ちとして吸収する。後方スケジューリングは不要。
+3. **タイミングチャートの人間工学。** キュー Loop はタイムアップで発火するため、Stay オペランドは Loop 自身のクロック分の 1 を引かずに*純粋な*タイミングチャート値 M として書ける。これは AI 生成命令リストの既知の幻覚源である引き算ストレスを除去する。
+
+### Edge cases (all decided) / エッジケース（すべて決定済み）
+
+| Case | Resolution |
+|---|---|
+| **No Prog End in the window** | No look-ahead. Stay Set opens the window; the core proceeds as if a Prog End will come. If none does, the **Stay command itself** is reached and acts as the implicit equivalent of Prog End (the immediate band ends, the wait begins). / 先読みなし。Stay Set がウィンドウを開く；コアは Prog End が来る前提で進む。来なければ、**Stay コマンド自身**に到達し、Prog End の暗黙の等価物として振る舞う(即時帯域が終了し、待機が始まる)。 |
+| **Prog End outside a window** | A "blank shot" — no effect. Prog End requires a background-program-window-open flag (set by Stay Set) to have any effect. It cannot open queue-reservation mode on its own. / 「空砲」——効力なし。Prog End は効力を持つために裏プログラムウィンドウOpenフラグ(Stay Set がセット)を必要とする。それ自身でキュー予約モードを開くことはできない。 |
+| **Multiple Prog Ends** | The first closes the immediate band; the second and subsequent are blank shots (the window/immediate-band is already closed). / 最初が即時帯域を閉じる；2回目以降は空砲(ウィンドウ／即時帯域は既に閉じている)。 |
+| **External mode (D4–D7 = 1–F) × Prog End** | **Formation-dependent.** A Formation that does *not* decode window-vs-queue-reservation runs external ops immediately regardless of position. A Formation that *does* decode it may, e.g., enable a *queued* external register write executed at Stay-timeup by prepared parallel hardware — providing a means of I/O into the foreground timing-chart world. This idea is deliberately retained; Prog End makes it cleanly realizable. / **Formation 次第。** 窓-対-キュー予約をデコード*しない* Formation は、位置に関わらず外部演算を即時実行する。デコード*する* Formation は、例えば、準備された並列ハードウェアによって Stay-timeup で実行される*キュー*外部レジスタ書き込みをイネーブルできる——前景タイミングチャート世界への I/O の手立てを提供する。このアイデアは意図的に温存される；Prog End はそれを綺麗に実現可能にする。 |
+
+### Relationship to §§ 3.4 and 3.5 / §§ 3.4 と 3.5 との関係
+
+Sections 3.4 (Internal-Mode Reserved Execution) and 3.5 (External-Mode Concurrent Execution) were written for the v1.0 model. Under v1.1, read them as follows: **§ 3.4's "backward-scheduled, completes at Stay-timeup" now describes the *queued band* only** (internal-mode commands after Prog End). Internal-mode commands in the *immediate band* (before Prog End) execute immediately, as §3.3a specifies. **§ 3.5's "triggered immediately, forward-scheduled" remains the default for external mode** regardless of band — except where a Formation chooses to decode queue-reservation (the edge case above). The minimum-stay-count constraint (§ 3.6) applies to both bands.
+
+§ 3.4(内部モード予約実行)と § 3.5(外部モード並行実行)は v1.0 モデルのために書かれた。v1.1 では、次のように読む: **§ 3.4 の「後方スケジュール、Stay-timeup で完了」は今や*キュー帯域*のみを記述する**(Prog End の後の内部モードコマンド)。*即時帯域*(Prog End の前)の内部モードコマンドは、§3.3a が指定する通り即時実行される。**§ 3.5 の「即座にトリガ、前方スケジュール」は外部モードの既定のままである**、帯域に関わらず——Formation がキュー予約をデコードすることを選ぶ場合(上記エッジケース)を除いて。最低ステイカウント制約(§ 3.6)は両帯域に適用される。
+
+This section **consciously revises C3-F2, C3-F3, and C3-F4** (see § 3.14). The revision is acknowledged as significant — in the architect's words, "cutting flesh to sever bone": accepting a revision of settled decisions in order to resolve a whole class of deeper difficulties.
+
+本節は **C3-F2、C3-F3、C3-F4 を意識的に改訂する**(§ 3.14 参照)。改訂は重要なものとして自覚されている——アーキテクトの言葉で「肉を切らせて骨を断つ」: より深い難所の一族全体を解決するために、確定した決定の改訂を受け入れる。
+
+---
+
 ## 3.4 Internal-Mode Reserved Execution (D4–D7 = 0) / 内部モード予約実行 (D4-D7 = 0)
+
+> **v1.1 note:** This section now describes the **queued band** (internal-mode commands *after* Prog End). For the immediate band (before Prog End), see § 3.3a. / **v1.1 注:** 本節は今や**キュー帯域**(Prog End の*後*の内部モードコマンド)を記述する。即時帯域(Prog End の前)は § 3.3a 参照。
 
 **Semantics.** When a Global with D4–D7 = 0 is encountered during the Stay window, its effect is *not* applied at the clock it is encountered. Instead, the operation is enqueued in an internal reservation queue. At Stay-timeup, queued operations are executed; their effects (which include any control-state changes the operation prescribes) take effect just before the Core advances out of the Stay state.
 
@@ -152,6 +238,8 @@ The contributor's current intent is (A) FIFO. However, the use case for multiple
 ---
 
 ## 3.5 External-Mode Concurrent Execution (D4–D7 = 1–F) / 外部モード並行実行 (D4-D7 = 1-F)
+
+> **v1.1 note:** Immediate concurrent execution (below) remains the **default** for external mode, regardless of position relative to Prog End. A Formation *may* optionally decode window-vs-queue-reservation to defer a queued external op to Stay-timeup (§ 3.3a edge cases; decision C3-F4 refined). / **v1.1 注:** 即時並行実行(下記)は、Prog End に対する位置に関わらず外部モードの**既定**のままである。Formation は任意で、窓-対-キュー予約をデコードしてキュー外部演算を Stay-timeup へ繰り延べることができる(§ 3.3a エッジケース；決定 C3-F4 精緻化)。
 
 **Semantics.** When a Global with D4–D7 = 1–F is encountered during the Stay window, its effect is triggered *immediately* on the clock it is encountered. The Core asserts the appropriate external-bus signals (decoded from D4–D7 as sub-opcode and D8–D15, D16–D31 as sub-operand data) and signals the start of an external operation. The Core then proceeds to the next state on the next clock; the external operation continues in parallel.
 
@@ -376,51 +464,55 @@ The two mechanisms are complementary. Most Formations will use both: Branch (ope
 
 ---
 
-## 3.11 Loop Counter Resource Set / ループカウンタリソースセット
+## 3.11 Loop Counter Resource Set (v1.1) / ループカウンタリソースセット (v1.1)
 
-**Purpose.** The Loop sub-opcode (internal sub-op 005) decrements a counter and jumps to the base address if the counter is non-zero. This requires the Core to maintain a small set of loop counters: their **number**, **width**, **selection mechanism**, **initialization**, and **externalization** are specified here.
+**Purpose.** The Loop sub-opcode (internal sub-op 5) **up-counts the primary loop counter and compares it to a target** (v1.1; was decrement-and-test in v1.0). This requires the Core to maintain a loop counter whose **count, width, target source, exit behavior, match-flag output, and externalization** are specified here.
 
-**目的。** Loop サブオペコード(内部サブop 005)はカウンタをデクリメントし、カウンタが非ゼロならベースアドレスにジャンプする。これはコアがループカウンタの小さなセットを維持することを要求する: その**数**、**幅**、**選択機構**、**初期化**、**外部化**はここで指定される。
+**目的。** Loop サブオペコード(内部サブop 5)は**プライマリ・ループカウンタをアップカウントし目標と比較する**(v1.1；v1.0 ではデクリメント＆テスト)。これはコアが、その**数、幅、目標ソース、脱出挙動、一致フラグ出力、外部化**がここで指定されるループカウンタを維持することを要求する。
 
-**Loop counter resource — current model.**
+**Loop counter resource — v1.1 model.**
 
-**ループカウンタリソース — 現在のモデル。**
+**ループカウンタリソース — v1.1 モデル。**
 
 | Property | Value | Status |
 |---|---|---|
-| Number of loop counters | Implementation-tunable (typical: 1 to 4) | **Convention** (C3-V1) |
-| Width of each loop counter | 12 bits (matching the operand width) | **Convention** (C3-V2) |
-| Counter selection mechanism | Sub-operand of Loop (D8–D15 of the Global instruction): low bits select which counter, high bits reserved for future / Loop のサブオペランド(Global 命令の D8-D15): 下位ビットがどのカウンタを選択、上位ビットは将来用に予約 | **Convention** (C3-V3) |
-| Counter initialization | Set explicitly by an external register write (sub-op 1) before the loop begins; alternatively by an indirect mechanism (Chapter 4) | **Fixed** (C3-F13) |
-| External observability | All loop counters are externally exposed as outputs for use by pipeline vector arithmetic / すべてのループカウンタはパイプラインベクタ算術での使用のために出力として外部に露出される | **Fixed** (C3-F14) |
+| Number of loop counters | **A single primary loop counter** (was 1–4 in v1.0). Nesting is handled by the external stack (§ 3.8); maximum nesting depth is a Formation concern. Parallel indices are provided by Formation-side external counters driven by the match flag (below). / **単一のプライマリ・ループカウンタ**(v1.0 では 1-4)。入れ子は外部スタック(§ 3.8)が扱う；最大入れ子深度は Formation の関心事。並列インデックスは一致フラグ(下記)で駆動される Formation 側外部カウンタが提供する。 | **F** (C3-F16, revises C3-V1) |
+| Width of the loop counter | 12 bits (matching the operand and the D16–D31 target field's low 12 bits) | **V** (C3-V2, retained) |
+| Count direction | **Up-count from 0** (was decrement in v1.0). On each Loop encounter, increment by 1, then compare to the target. / **0 からのアップカウント**(v1.0 ではデクリメント)。各 Loop 遭遇で 1 増やし、目標と比較する。 | **F** (C3-F17) |
+| Target source | The 12-bit target value is read from the **D16–D31 extended operand** (Chapter 2 v1.1 § 2.7/2.8). Indirect target (literal-zero-as-escape) remains a Chapter 4 topic. / 12ビット目標値は **D16-D31 拡張オペランド**から読まれる。間接目標(直値ゼロエスケープ)は第4章の話題として残る。 | **F** (C3-F13, revised) |
+| Exit behavior | When counter = target, the loop exits (advance to next state) and the counter **auto-clears to 0** — ready for the next loop with no explicit clear. / カウンタ = 目標の時、ループは脱出し(次のステートへ進む)、カウンタは **0 へ自動クリア**——明示的クリアなしで次のループに備える。 | **F** (C3-F17) |
+| Match-flag output | On the exit clock (counter = target), a **1-clock `loop_cnt_match` pulse** is emitted externally. (Companion flags `stay_cnt_match` and `prescaler_match` are emitted by the stay and prescaler counters on their own target-match — see below.) / 脱出クロック(カウンタ = 目標)で、**1クロックの `loop_cnt_match` パルス**が外部に発される。(コンパニオンフラグ `stay_cnt_match` と `prescaler_match` はステイカウンタとプリスケーラカウンタが自身の目標一致で発する——下記参照。) | **F** (C3-F18) |
+| External observability | The loop counter (and the match flags) are externally exposed as outputs for use by pipeline vector arithmetic and Formation-side external counters. / ループカウンタ(と一致フラグ)は、パイプラインベクタ算術と Formation 側外部カウンタでの使用のために出力として外部に露出される。 | **F** (C3-F14) |
 
-**External observability — why this matters.** The original PTSG specification anticipated: *"if multi-loop counters and stay counters are externalized for use as RAM addresses or coefficients, pipeline vector arithmetic units can also be easily built."* The PTSG-Core's loop counters are therefore not merely internal control state — they are **first-class observable outputs** intended to be used by external logic.
+**Why up-count.** v1.0 used decrement (count down to zero). The v1.1 deliberation identified that down-count causes an underflow glitch (0 → 0xFFF on decrement past zero), which is harmful when the counter value is used externally as a RAM address or index; it also complicates dynamic reload. Up-count from 0 eliminates the glitch (monotonic 0,1,2,…), makes the counter value directly usable as an array index, and matches the existing Stay counter (which already up-counts). The cost — needing a comparison against a target rather than a test-for-zero — is negligible and is what the D16–D31 target field provides.
 
-**外部観察可能性 — なぜこれが重要か。** オリジナル PTSG 仕様は予期した: *「マルチループカウンタとステイカウンタを RAM アドレスや係数として使用するために外部化すれば、パイプラインベクタ算術ユニットも簡単に構築できる」*。PTSGコアのループカウンタはしたがって単なる内部制御状態ではない——それらは**第一級の観察可能な出力**であり、外部ロジックによって使用されることを意図されている。
+**なぜアップカウントか。** v1.0 はデクリメント(0 まで数え下げる)を使った。v1.1 協議は、ダウンカウントがアンダーフローグリッチ(ゼロを過ぎてデクリメントで 0 → 0xFFF)を引き起こすことを識別した、これはカウンタ値が外部で RAM アドレスやインデックスとして使われる時に有害である；動的リロードも複雑化する。0 からのアップカウントはグリッチを排除し(単調 0,1,2,…)、カウンタ値を配列インデックスとして直接利用可能にし、既存のステイカウンタ(既にアップカウント)と一致する。コスト——ゼロテストではなく目標との比較を必要とすること——は無視でき、それは D16-D31 目標フィールドが提供する。
 
-**Future Formations leveraging loop-counter observability.** Anticipated applications:
+**The match flags and Formation-side parallel indices.** The single-counter design (vs v1.0's 1–4 counters) does not lose capability, because of the match flags. A Formation needing multiple simultaneous loop indices (e.g., a 2-D access pattern with an inner and an outer index) places an **external counter in the Formation** and increments it on each `loop_cnt_match` pulse. The Core's single counter provides the inner index; the Formation's counter provides the outer index. Thus: **single core counter + match flags + Formation external counters = the multiple-parallel-counter capability of v1.0**, with the resource cost pushed to the Formation that actually needs it — consistent with the PTSG externalization philosophy. (The external stack, § 3.8, separately handles temporal *nesting*; the match flags handle spatial *parallelism*. These are distinct and complementary.)
 
-**ループカウンタ観察可能性を活用する将来のフォーメーション。** 予期される応用:
+**一致フラグと Formation 側並列インデックス。** 単一カウンタ設計(v1.0 の 1-4 カウンタに対し)は能力を失わない、一致フラグのおかげで。複数の同時ループインデックスを必要とする Formation(例: 内側と外側のインデックスを持つ2次元アクセスパターン)は、**Formation に外部カウンタ**を置き、各 `loop_cnt_match` パルスでそれを増やす。コアの単一カウンタが内側インデックスを提供する；Formation のカウンタが外側インデックスを提供する。したがって: **単一コアカウンタ + 一致フラグ + Formation 外部カウンタ = v1.0 の複数並列カウンタ能力**、リソースコストは実際にそれを必要とする Formation へ押し出される——PTSG 外部化哲学と整合的。(外部スタック § 3.8 は別途、時間的*入れ子*を扱う；一致フラグは空間的*並列性*を扱う。これらは別個かつ補完的である。)
 
-- **WPMS:** the Lower PTSG's loop counter directly serves as the differential-engine k-index (Chapter 1 § 1.10 and the Emancipation trace).
-- **SDRAM access:** loop counters drive row/column addressing for burst transactions.
-- **Pipeline vector arithmetic:** loop counters index coefficient ROMs and data RAMs.
-- **DMA-style transfers:** loop counters double as byte/word offsets into source/destination buffers.
+**External observability — why this matters.** The original PTSG specification anticipated: *"if multi-loop counters and stay counters are externalized for use as RAM addresses or coefficients, pipeline vector arithmetic units can also be easily built."* Under v1.1, the *single* core counter plus Formation-side counters realize this same intent. The counter and the match flags are **first-class observable outputs** intended for external logic.
 
-- **WPMS:** Lower PTSG のループカウンタは差分エンジンの k インデックスとして直接奉仕する(第1章 § 1.10 と Emancipation トレース)。
-- **SDRAM アクセス:** ループカウンタはバーストトランザクションの行／列アドレッシングを駆動する。
-- **パイプラインベクタ算術:** ループカウンタは係数 ROM とデータ RAM を索引付ける。
-- **DMA 風転送:** ループカウンタはソース／宛先バッファへのバイト／ワードオフセットを兼ねる。
+**外部観察可能性 — なぜこれが重要か。** オリジナル PTSG 仕様は予期した: *「マルチループカウンタとステイカウンタを RAM アドレスや係数として使用するために外部化すれば、パイプラインベクタ算術ユニットも簡単に構築できる」*。v1.1 では、*単一の*コアカウンタと Formation 側カウンタがこの同じ意図を実現する。カウンタと一致フラグは、外部ロジックを意図した**第一級の観察可能な出力**である。
 
-**Loop counter at zero — Tie.** When a Loop sub-opcode is executed with the selected counter already at zero, what happens? Three reasonable interpretations, recorded as Tie C3-T9:
+**Future Formations leveraging counter observability and match flags.** Anticipated applications:
 
-**ゼロのループカウンタ — Tie。** Loop サブオペコードが、選択されたカウンタが既にゼロの状態で実行される時、何が起こるか? 三つの合理的な解釈、Tie C3-T9 として記録される:
+**カウンタ観察可能性と一致フラグを活用する将来のフォーメーション。** 予期される応用:
 
-- **(A) Skip the loop body** — counter stays at 0; do not jump to base; advance to next state. Matches the "for (i=0; i<count; i++)" semantic with count = 0.
-- **(B) Execute once then exit** — decrement (wraps to 0xFFF = 4095); jump to base; on the next encounter, counter is 0 again; behavior recurses. Effectively an infinite loop — probably not intended.
-- **(C) Treat as "max iterations"** — when counter is encountered at 0, interpret as 4096 iterations (literal-zero-as-escape). This is consistent with Chapter 2's literal-zero-as-escape convention for Stay's operand.
+- **WPMS:** the Lower PTSG's loop counter directly serves as the differential-engine k-index (Chapter 1 § 1.10 and the Emancipation trace); the match flag triggers the k-index advance.
+- **SDRAM access:** the counter drives row/column addressing; the match flag triggers row/bank transitions.
+- **Pipeline vector arithmetic:** the counter indexes coefficient ROMs; the match flag strobes the result latch.
+- **DMA-style transfers:** the counter is the buffer offset; the match flag signals transfer completion.
 
-The contributor leans toward (A) for safety (no accidental infinite loops), but the literal-zero-as-escape consistency argument for (C) has merit. Community discussion invited.
+- **WPMS:** Lower PTSG のループカウンタは差分エンジンの k インデックスとして直接奉仕する(第1章 § 1.10 と Emancipation トレース)；一致フラグが k インデックスの前進をトリガする。
+- **SDRAM アクセス:** カウンタが行／列アドレッシングを駆動する；一致フラグが行／バンク遷移をトリガする。
+- **パイプラインベクタ算術:** カウンタが係数 ROM を索引付ける；一致フラグが結果ラッチをストローブする。
+- **DMA 風転送:** カウンタはバッファオフセット；一致フラグが転送完了を信号する。
+
+**Loop counter at zero — former Tie C3-T9, now dissolved.** Under v1.0's decrement model, "what happens when the counter is already zero?" was a genuine Tie (skip / wrap-and-recurse / treat-as-4096). **The v1.1 up-count transition dissolves this question entirely:** the counter *always starts at 0*, and zero is simply the loop's normal beginning. There is no degenerate "encountered at zero" case to disambiguate. The former Tie C3-T9 is therefore resolved (dissolved) by the up-count decision, not by choosing among its old alternatives.
+
+**ゼロのループカウンタ — 旧 Tie C3-T9、今や消滅。** v1.0 のデクリメントモデルの下では、「カウンタが既にゼロの時何が起こるか?」は本物の Tie だった(スキップ／ラップ＆再帰／4096 扱い)。**v1.1 のアップカウント移行はこの問いを完全に消滅させる:** カウンタは*常に 0 から始まり*、ゼロは単にループの通常の始まりである。曖昧性除去すべき退化した「ゼロで遭遇」事例は存在しない。したがって旧 Tie C3-T9 は、古い代替案の中から選ぶことによってではなく、アップカウント決定によって解決(消滅)される。
 
 ---
 
@@ -470,12 +562,12 @@ Following Chapter 2's classification scheme: **Fixed (F)** = architectural commi
 | ID | Decision | Status |
 |---|---|---|
 | **C3-F1** | The Stay window is defined as the period from Stay Set execution to Stay-timeup. Globals encountered within this window are background-executed; Globals encountered outside are foreground-executed / Stayウィンドウは Stay Set 実行から Stay-timeup までの期間として定義される。本ウィンドウ内に遭遇する Global は裏実行される；外で遭遇するものは前景実行される | **F** |
-| **C3-F2** | Background execution has two distinct modes: internal-mode (D4-D7=0, backward-scheduled, completes at Stay-timeup) and external-mode (D4-D7=1-F, forward-scheduled, triggered immediately) / 裏実行は二つの別個のモードを持つ: 内部モード(D4-D7=0、後方スケジュール、Stay-timeup で完了)と外部モード(D4-D7=1-F、前方スケジュール、即座にトリガ) | **F** |
+| **C3-F2** | **(REVISED in v1.1)** Background-execution scheduling is determined by **position relative to Prog End** (§ 3.3a), not by mode. Internal-mode commands *before* Prog End execute immediately (forward); *after* Prog End they are queued (backward, at Stay-timeup). The v1.0 rule "internal = always backward, external = always forward" is superseded. / **(v1.1 で改訂)** 裏実行スケジューリングは、モードではなく **Prog End に対する位置**(§ 3.3a)によって決定される。Prog End の*前*の内部モードコマンドは即時実行(前方)；*後*ではキュー(後方、Stay-timeup で)。v1.0 規則「内部＝常に後方、外部＝常に前方」は置き換えられる。 | **F** (v1.1 revision) |
 | **C3-T1** | Timing signal output during the Stay window Tie: (A) Stay state's D16-D31; (B) Stay Set state's D16-D31; (C) last non-background state's D16-D31. Contributor leans toward (A) / Stayウィンドウ中のタイミング信号出力 Tie: (A) Stay ステートの D16-D31；(B) Stay Set ステートの D16-D31；(C) 最後の非裏側ステートの D16-D31。貢献者は (A) に傾く | **T** |
-| **C3-F3** | Internal-mode operations are backward-scheduled to complete at Stay-timeup; the operation start time is (Stay-timeup − latency) / 内部モード演算は Stay-timeup で完了するよう後方スケジュールされる；演算開始時刻は (Stay-timeup − レイテンシ) | **F** |
+| **C3-F3** | **(REVISED in v1.1)** Internal-mode commands *in the queued band* (after Prog End) fire at Stay-timeup and absorb their own latency as post-timeup fetch wait — no backward "complete-exactly-at-timeup" scheduling is required (the v1.0 backward-scheduling hardware is eliminated). Internal-mode commands in the immediate band execute immediately. / **(v1.1 で改訂)** *キュー帯域*(Prog End の後)の内部モードコマンドは Stay-timeup で発火し、自身のレイテンシをタイムアップ後フェッチ待ちとして吸収する——後方の「タイムアップでちょうど完了」スケジューリングは不要(v1.0 の後方スケジューリングハードウェアは排除される)。即時帯域の内部モードコマンドは即時実行される。 | **F** (v1.1 revision) |
 | **C3-T2** | Multiple internal-mode operations queued in one window — execution order Tie: (A) FIFO; (B) LIFO; (C) implementation-defined. Contributor leans toward (A) / 一ウィンドウ内にキューに入った複数の内部モード演算——実行順序 Tie: (A) FIFO；(B) LIFO；(C) 実装定義。貢献者は (A) に傾く | **T** |
 | **C3-T3** | Stay Set encountered inside an already-open Stay window — behavior Tie: (A) no-op; (B) ends current window, starts new; (C) error. Contributor leans toward (A) / 既に開いているStayウィンドウ内で遭遇する Stay Set ——挙動 Tie: (A) no-op；(B) 現ウィンドウを終了、新規開始；(C) エラー。貢献者は (A) に傾く | **T** |
-| **C3-F4** | External-mode operations are triggered immediately when their state is reached; they run concurrently with the Stay's waiting / 外部モード演算はそのステートに到達した時に即座にトリガされる；Stay の待機と並行して走る | **F** |
+| **C3-F4** | **(REFINED in v1.1)** External-mode operations are triggered immediately when reached, running concurrently with the Stay's waiting — the default, regardless of band. A Formation *may* additionally decode window-vs-queue-reservation to execute a queued external op at Stay-timeup via prepared parallel hardware (Formation-dependent; § 3.3a edge cases), enabling I/O into the foreground timing-chart world. / **(v1.1 で精緻化)** 外部モード演算は到達時に即座にトリガされ、Stay の待機と並行して走る——帯域に関わらず既定。Formation は*加えて*、窓-対-キュー予約をデコードし、準備された並列ハードウェアで Stay-timeup にキュー外部演算を実行できる(Formation 次第；§ 3.3a エッジケース)、前景タイミングチャート世界への I/O を可能にする。 | **F** (v1.1 refinement) |
 | **C3-F5** | External-mode bus interface exposes: ext_op_valid, ext_op_subopcode, ext_op_sub_operand, ext_op_data, ext_op_ready. Pin-level specifications in Chapter 5 / 外部モードバスインターフェースは ext_op_valid、ext_op_subopcode、ext_op_sub_operand、ext_op_data、ext_op_ready を露出する。ピンレベル仕様は第5章にある | **F** |
 | **C3-T4** | Minimum-stay-count constraint violation behavior Tie: (A) Core proceeds, asserts error; (B) Core stalls until ext_op_ready; (C) implementation-defined. Contributor leans toward (A) / 最低ステイカウント制約違反挙動 Tie: (A) コアは進む、エラーをアサート；(B) コアは ext_op_ready まで停滞；(C) 実装定義。貢献者は (A) に傾く | **T** |
 | **C3-F6** | The minimum-stay-count chaining rule: for external-mode Global at state N+i with latency L_i, the Stay operand M must satisfy M ≥ i + L_i for every i / 最低ステイカウント連鎖規則: ステート N+i における外部モード Global がレイテンシ L_i を持つ場合、Stay オペランド M はすべての i について M ≥ i + L_i を満たさなければならない | **F** (Gemini-derived corollary) |
@@ -488,25 +580,34 @@ Following Chapter 2's classification scheme: **Fixed (F)** = architectural commi
 | **C3-T5** | Behavior of Return when holding register has not been populated since last Return / restart: (A) undefined; (B) implementation-defined; (C) Core specifies a known-safe default (e.g., restore to State Number 0). Contributor leans toward (B) / 最後の Return／再開以降に保持レジスタが populate されていない時の Return 挙動: (A) 未定義；(B) 実装定義；(C) コアが既知安全デフォルト(例: ステートナンバー 0 への復元)を指定。貢献者は (B) に傾く | **T** |
 | **C3-T6** | External stack memory push/pop trigger Tie: (A) implicit (Core auto-pushes when needed); (B) explicit sub-opcodes; (C) hybrid (implicit push, explicit pop). Contributor leans toward (A) / 外部スタックメモリプッシュ／ポップトリガ Tie: (A) 暗黙的(コアが必要な時に自動プッシュ)；(B) 明示的サブオペコード；(C) ハイブリッド(暗黙的プッシュ、明示的ポップ)。貢献者は (A) に傾く | **T** |
 | **C3-T7** | Holding register "saved by insertion" flag bit (for Return +1 vs +0 distinction) Tie: (A) Core carries the flag bit; (B) source generates target-minus-1 to compensate. Contributor leans toward (A) / 保持レジスタ「挿入による保存」フラグビット(Return +1 対 +0 区別のため) Tie: (A) コアがフラグビットを運ぶ；(B) ソースが補償のためにターゲット - 1 を生成する。貢献者は (A) に傾く | **T** |
-| **C3-T8** | Insertion timing during a Stay window Tie: (A) immediate; (B) deferred to Stay-timeup; (C) two variants (normal + urgent). Contributor leans toward (B) / Stayウィンドウ中の挿入タイミング Tie: (A) 即時；(B) Stay-timeup へ繰り延べ；(C) 二つの変種(通常 + 緊急)。貢献者は (B) に傾く | **T** |
-| **C3-V1** | Number of loop counters: implementation-tunable, typical 1 to 4 / ループカウンタの数: 実装で調整可能、典型的に 1 から 4 | **V** |
-| **C3-V2** | Width of each loop counter: 12 bits (matching operand width) / 各ループカウンタの幅: 12 ビット(オペランド幅と一致) | **V** |
-| **C3-V3** | Loop counter selection by sub-operand low bits / サブオペランド下位ビットによるループカウンタ選択 | **V** |
-| **C3-F13** | Loop counter initialization: via external register write (sub-op 1); alternatively via indirect mechanism (Chapter 4) / ループカウンタ初期化: 外部レジスタ書き込み(サブop 1)経由；代替案として間接機構経由(第4章) | **F** |
+| **C3-T8 → C3-F20** | **(RESOLVED in v1.1)** Insertion timing during a Stay window: resolved as **(B) deferred to Stay-timeup**. Rationale: the current WPMS Formation's paramount goal is early sound output and needs no advanced insertion; (B) is the safest option for this Core version. The (A)/(C) alternatives remain available for a future version if a Formation requires real-time preemption. / **(v1.1 で解決)** Stayウィンドウ中の挿入タイミング: **(B) Stay-timeup へ繰り延べ**として解決。根拠: 現在の WPMS Formation の至上目標は早期出音であり高度な挿入を必要としない；(B) はこのコア版で最も安全。(A)/(C) 代替案は、Formation がリアルタイム先取を要求する場合の将来版のために利用可能なまま。 | **F** (was Tie C3-T8) |
+| **C3-V1 → C3-F16** | **(REVISED in v1.1)** Number of loop counters: **a single primary loop counter** (was 1–4). Nesting via external stack; parallel indices via Formation external counters driven by match flags. / **(v1.1 で改訂)** ループカウンタの数: **単一のプライマリ・ループカウンタ**(旧 1-4)。入れ子は外部スタック経由；並列インデックスは一致フラグで駆動される Formation 外部カウンタ経由。 | **F** (was Convention C3-V1) |
+| **C3-V2** | Width of the loop counter: 12 bits (matching operand width and the D16–D31 target's low 12 bits) / ループカウンタの幅: 12 ビット(オペランド幅と D16-D31 目標の下位 12 ビットと一致) | **V** (retained) |
+| **C3-V3** | **(SUPERSEDED in v1.1)** Loop counter selection by sub-operand low bits — no longer needed, as there is a single counter. The field formerly imagined for counter selection does not exist (see the 8-bit/12-bit bug fix, Chapter 2 v1.1). / **(v1.1 で廃止)** サブオペランド下位ビットによるループカウンタ選択——単一カウンタのため不要。かつてカウンタ選択用に想定されたフィールドは存在しない(8ビット/12ビットバグ修正、第2章 v1.1 参照)。 | superseded |
+| **C3-F13** | **(REVISED in v1.1)** Loop counter target: the 12-bit target value is read from the D16–D31 extended operand; the counter up-counts from 0 to this target. Indirect target (literal-zero-as-escape) remains a Chapter 4 topic. / **(v1.1 で改訂)** ループカウンタ目標: 12ビット目標値は D16-D31 拡張オペランドから読まれる；カウンタは 0 からこの目標までアップカウントする。間接目標(直値ゼロエスケープ)は第4章の話題として残る。 | **F** (v1.1 revised) |
+| **C3-F17** (v1.1) | Up-count: the loop counter counts up from 0; on reaching the target it exits and auto-clears to 0. Eliminates underflow glitch and the reload concept. / アップカウント: ループカウンタは 0 から数え上げる；目標到達で脱出し 0 へ自動クリアする。アンダーフローグリッチとリロード概念を排除。 | **F** (v1.1) |
+| **C3-F18** (v1.1) | Match flags: loop_cnt_match / stay_cnt_match / prescaler_match are emitted externally as 1-clock pulses when each counter reaches its target. Enables Formation-side parallel indices, sample-and-hold, and zero-latency triggering. / 一致フラグ: loop_cnt_match / stay_cnt_match / prescaler_match は、各カウンタが目標到達時に 1クロックパルスとして外部に発される。Formation 側並列インデックス、サンプル＆ホールド、ゼロレイテンシトリガを可能にする。 | **F** (v1.1) |
+| **C3-F19** (v1.1) | Prog End command (internal sub-opcode 6, tentative): declares the boundary between the immediate band and the queued band within a Stay window. Blank shot outside an open window; second-and-subsequent are blank shots. Cascades to Sub-sequence Call and Return (immediate / queued variants). See § 3.3a. / Prog End コマンド(内部サブオペコード 6、暫定): Stayウィンドウ内の即時帯域とキュー帯域の境界を宣言する。開いた窓の外では空砲；2回目以降は空砲。Sub-sequence Call と Return に波及(即時／キュー変種)。§ 3.3a 参照。 | **F** (v1.1) |
 | **C3-F14** | Loop counters are externally exposed as outputs (for pipeline vector arithmetic etc.) / ループカウンタは外部に出力として露出される(パイプラインベクタ算術等のため) | **F** |
-| **C3-T9** | Loop counter at zero behavior Tie: (A) skip (advance, no jump); (B) wrap and recurse (infinite loop); (C) treat as 4096 (literal-zero-as-escape). Contributor leans toward (A) / ループカウンタゼロ挙動 Tie: (A) スキップ(進む、ジャンプなし)；(B) ラップして再帰(無限ループ)；(C) 4096 として扱う(直値ゼロエスケープ)。貢献者は (A) に傾く | **T** |
+| **C3-T9** | **(DISSOLVED in v1.1)** Loop-counter-at-zero behavior — dissolved by the up-count transition (C3-F17). The counter always starts at 0; zero is simply the loop's normal beginning, so there is no degenerate at-zero case to disambiguate. / **(v1.1 で消滅)** ループカウンタゼロ挙動——アップカウント移行(C3-F17)により消滅。カウンタは常に 0 から始まる；ゼロは単にループの通常の始まりであり、曖昧性除去すべき退化したゼロ事例は存在しない。 | dissolved (was Tie) |
+| **C3-F15** (v1.1) | D16–D31 extended-operand repurposing for internal-mode Globals needing a 12-bit parameter (Loop target, Sub-sequence Call offset). Flat extended operand, no Mode sub-field; the elaborate Mode scheme was declined (memo only). See Chapter 2 v1.1 § 2.7/§ 2.13 (C2-F11). / 12ビットパラメータを必要とする内部モード Global(Loop 目標、Sub-sequence Call オフセット)のための D16-D31 拡張オペランド再目的化。平坦な拡張オペランド、Mode サブフィールドなし；精巧な Mode スキームは不採用(メモのみ)。第2章 v1.1 § 2.7/§ 2.13 (C2-F11) 参照。 | **F** (v1.1 bug fix) |
+| **C3-T10** (v1.1, new) | Prescale evaluation timing — leading edge vs trailing edge for queued execution. Leading edge can hold a flag/signal for a full prescale period (good for external strobes); semantics to be verified. Deferred to Chapter 4 (prescaler). / プリスケール判定タイミング——キュー実行の前縁 対 後縁。前縁はフラグ／信号をプリスケール1周期分保持できる(外部ストローブに良い)；意味論は要検証。第4章(プリスケーラ)へ繰り延べ。 | **T** (deferred) |
+| **C3-T11** (v1.1, new) | Exact role/timing of Stay Set — whether it should be only a clear/sync command (with the actual count-start deferred to Prog End or the Stay command) to eliminate timing jitter from background-program clocks. Entangled with Prog End; deferred to Chapter 4. / Stay Set の正確な役割／タイミング——裏プログラムクロックからのタイミングジッタを排除するため、単なるクリア／同期命令とすべきか(実際のカウント開始を Prog End または Stay コマンドへ繰り延べ)。Prog End と絡む；第4章へ繰り延べ。 | **T** (deferred) |
+| **C3-T12** (v1.1, new) | Local Branch — a zero-time-axis conditional branch for use inside the immediate background band (the top-level Branch consumes a clock / self-loops, breaking the timing hold). Would occupy an internal sub-opcode slot. Deferred to Chapter 4. / Local Branch——即時裏帯域内で使うゼロ時間軸条件分岐(トップレベル Branch はクロックを消費／自己ループし、タイミング保持を破壊する)。内部サブオペコードスロットを占有する。第4章へ繰り延べ。 | **T** (deferred) |
+| **C3-T13** (v1.1, new) | Queued NOP — whether a NOP placed after Prog End should function as a Timeup-tracking timing placeholder (sliding one prescaled unit / a specific pin phase in at the very end of the wait). Deferred to Chapter 4. / キュー NOP——Prog End の後に置かれた NOP が、Timeup 追尾型タイミングプレースホルダーとして機能すべきか(待機の最末尾にプリスケール1単位／特定ピンフェーズを滑り込ませる)。第4章へ繰り延べ。 | **T** (deferred) |
+| **C3-T14** (v1.1, new) | Final internal-control sub-opcode 0–7 layout — including Prog End's permanent slot (tentatively 6), whether a Local Branch is added, and the fate of NOP (one proposal removes NOP to free a slot). Deferred to Chapter 4. / 最終的な内部制御サブオペコード 0-7 レイアウト——Prog End の恒久スロット(暫定 6)、Local Branch が追加されるか、NOP の運命(ある提案は NOP を除いてスロットを空ける)を含む。第4章へ繰り延べ。 | **T** (deferred) |
 
-**Decision count by status:**
+**Decision count by status (v1.1):**
 
-**地位別決定数:**
+**地位別決定数(v1.1):**
 
-- **Fixed (F):** 14 — architectural commitments
-- **Convention (V):** 3 — could in principle be reconsidered
-- **Tie (T):** 9 — community input actively invited
+- **Fixed (F):** 20 — architectural commitments (including v1.1 additions C3-F15–F20 and the revisions of C3-F2/F3/F4)
+- **Convention (V):** 1 — C3-V2 (counter width); C3-V1 and C3-V3 were superseded/promoted in v1.1
+- **Tie (T):** 12 — C3-T1–T7 (carried from v1.0), plus C3-T10–T14 (new, prescaler-coupled); C3-T8 was resolved and C3-T9 dissolved in v1.1
 
-The high Tie count in this chapter (9, vs Chapter 2's 4) reflects the inherent complexity of dynamic mechanics: many timing details have multiple reasonable interpretations, and the community is the right body to weigh in.
+The Tie count rose (new prescaler-coupled questions surfaced during the v1.1 deliberation) even as two v1.0 Ties closed — which is the healthy signature of a deliberation that resolves what it can and honestly records what it cannot yet resolve.
 
-本章の高い Tie 数(9、対 第2章の 4)は動的機構の固有の複雑性を反映する: 多くのタイミング詳細は複数の合理的解釈を持ち、コミュニティはそれを評価する正しい主体である。
+Tie 数は上昇した(v1.1 協議中に新たなプリスケーラ結合の問いが浮上した)、二つの v1.0 Tie が閉じたにもかかわらず——これは、解決できることを解決し、まだ解決できないことを正直に記録する協議の健全な兆候である。
 
 ---
 
@@ -515,12 +616,12 @@ The high Tie count in this chapter (9, vs Chapter 2's 4) reflects the inherent c
 > *Time on the stay axis; space on the state axis; effects, in the background; consciousness, at the timeup.*
 > *時間はステイ軸に、空間はステート軸に、効果は裏側に、意識はタイムアップに。*
 
-> *Internal-mode operations complete at Stay-timeup, scheduled backward. External-mode operations begin when triggered, scheduled forward. Both fit inside the same window; both honor the same constraint.*
-> *内部モード演算は Stay-timeup で完了する、後方スケジュール。外部モード演算はトリガ時に始まる、前方スケジュール。両者は同じウィンドウ内に収まる；両者は同じ制約を尊重する。*
+> *Before Prog End, effects land at once; after Prog End, they wait for the timeup. Position, not mode, decides when the background speaks.*
+> *Prog End の前では効果は即座に着地する；Prog End の後では timeup を待つ。モードではなく位置が、裏側がいつ語るかを決める。*
 
 > *Where the dynamics have multiple legible readings — and they do, more often here than anywhere else in the Core — the readings are recorded, not chosen. The community is the place where they are weighed.*
 > *動的機構が複数の判読可能な読解を持つ場所——そしてそれらは持つ、ここではコア内の他のどこよりも頻繁に——読解は選ばれず記録される。コミュニティはそれらが評価される場所である。*
 
-This chapter is released into the public domain under CC0 1.0 Universal. Chapter 4 (Indirect Addressing and Prescaler) will resolve the literal-zero-as-escape escapes left unaddressed here (Jump operand 0, Stay operand 0, loop counter initialization indirect mode). Chapter 5 (External Logic Interface) will specify the pin-level bus protocols for the external operation bus, external stack bus, insertion bus, and loop counter externalization. Until those chapters arrive, the Ties recorded above (C3-T1 through C3-T9) remain open for community discussion.
+This chapter is released into the public domain under CC0 1.0 Universal. **This is the v1.1 revision.** Chapter 4 (Indirect Addressing and Prescaler) will resolve the literal-zero-as-escape escapes left unaddressed here (Jump operand 0, Stay operand 0, loop counter target indirect mode) and will deliberate the five new prescaler-coupled Ties (C3-T10–T14). Chapter 5 (External Logic Interface) will specify the pin-level bus protocols for the external operation bus, external stack bus, insertion bus, loop counter externalization, and the match-flag outputs. The Ties remaining open after v1.1 (C3-T1–T7 and C3-T10–T14) await community input and the Chapter 4/5 drafting.
 
-本章は CC0 1.0 Universal のもとパブリックドメインに公開される。第4章(間接アドレッシングとプリスケーラ)はここで対処されていない直値ゼロエスケープ(Jump オペランド 0、Stay オペランド 0、ループカウンタ初期化間接モード)を解決する。第5章(外部ロジックインターフェース)は外部演算バス、外部スタックバス、挿入バス、ループカウンタ外部化のためのピンレベルバスプロトコルを指定する。それらの章が到来するまで、上に記録された Tie(C3-T1 から C3-T9 まで)はコミュニティ議論のために開かれたままである。
+本章は CC0 1.0 Universal のもとパブリックドメインに公開される。**これは v1.1 改訂である。** 第4章(間接アドレッシングとプリスケーラ)はここで対処されていない直値ゼロエスケープ(Jump オペランド 0、Stay オペランド 0、ループカウンタ目標間接モード)を解決し、五つの新しいプリスケーラ結合 Tie(C3-T10〜T14)を協議する。第5章(外部ロジックインターフェース)は外部演算バス、外部スタックバス、挿入バス、ループカウンタ外部化、そして一致フラグ出力のためのピンレベルバスプロトコルを指定する。v1.1 後に開かれたまま残る Tie(C3-T1〜T7 と C3-T10〜T14)はコミュニティ入力と第4章/5章の起草を待つ。
