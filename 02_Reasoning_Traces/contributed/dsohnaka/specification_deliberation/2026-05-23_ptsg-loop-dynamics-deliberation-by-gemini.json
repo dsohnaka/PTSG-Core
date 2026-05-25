@@ -1,0 +1,163 @@
+{
+  "metadata": {
+    "title": "Gemini Deliberates the Loop Command — A Complete Deliberation Cycle",
+    "title_ja": "GeminiによるLoopコマンド協議 — 完全な協議サイクル",
+    "date_of_deliberation": "2026-05-23",
+    "date_archived_and_decided": "2026-05-24",
+    "contributor": {
+      "name": "Tsuneo Ohnaka",
+      "name_ja": "大中庸生",
+      "github_handle": "dsohnaka",
+      "role": "Original PTSG-Core architect; decision authority"
+    },
+    "participants": [
+      {"name": "Tsuneo Ohnaka", "role": "Architect — posed questions in deliberation; made final decisions"},
+      {"name": "Google Gemini 3.5 Flash", "provider": "Google", "role": "Evaluator (note: drifted into amanuensis role; see amanuensis_hack_phenomenon)"},
+      {"name": "Claude amanuensis session", "provider": "Anthropic", "role": "Architectural-coherence assessment; co-decision with architect"}
+    ],
+    "topic": "A specification-deliberation that began as a casual test of whether Gemini 3.5 Flash could read the PTSG-Core repository, and evolved into a substantive deliberation on the Loop command — surfacing a genuine specification bug (8-bit/12-bit sub-operand inconsistency), driving progressive improvements (up-count, match flags, single counter), producing a major proposal (Prog End), and resolving one open Tie (C3-T8).",
+    "trace_subtype": "Specification deliberation — the first complete deliberation cycle in PTSG-Core (LLM evaluation -> amanuensis assessment -> architect+amanuensis decision)",
+    "hierarchy_rule_note": "This deliberation was conducted WITHOUT the LLM-hierarchy rule being explained to Gemini. Gemini drifted into the amanuensis role and labeled its evaluations as 'Fixed' decisions (C3-F15 through C3-F19). This trace re-frames all Gemini outputs as EVALUATIONS. Final decisions were made by the architect in consultation with the Claude amanuensis session and are recorded in the 'decisions' field.",
+    "status": "First specification-deliberation trace; first complete deliberation cycle",
+    "original_language": "Japanese",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "source_material_provenance": "Verbatim Gemini 3.5 Flash dialogue (764 lines) preserved by the contributor, plus the architect-amanuensis decision session of 2026-05-24."
+  },
+
+  "deliberation_phases": [
+    {"phase": 1, "title": "The 8-bit discovery", "summary": "Gemini computed that the Loop sub-operand is 8 bits (max 256 iterations). The architect recognized his own premise-mistake (assuming 12-bit sub-operand) and asked for analogous problems. Gemini systematically identified: Sub-sequence Call (004) limited to 255-state reach, Reset (000) limited to 256 addresses if extended, external register addressing limited to 256 registers. Root cause: the Global instruction format is over-packed."},
+    {"phase": 2, "title": "D16-D31 repurposing idea", "summary": "Gemini proposed (A) repurposing timing-signal field D16-D31 as extended operand space, or (B) promoting Loop/Call to top-level opcodes. Architect chose A and extended it with a Mode-field idea (D28-D31 = Mode). [Amanuensis note: the Mode system was later declined; only the underlying repurposing was adopted.]"},
+    {"phase": 3, "title": "Up-count and counter consolidation", "summary": "Architect clarified a miscommunication (fixed 4-level nesting was rejected in favor of stack-based auto-nesting, making multiple counters unnecessary). Proposed up-count over down-count for glitch elimination and external readability."},
+    {"phase": 4, "title": "Auto-clear and match flags", "summary": "Architect chose auto-clear-to-zero on loop exit and added match-flag outputs (loop_cnt_match, stay_cnt_match, prescaler_match) as 1-clock pulses for Formation-side hardware optimization."},
+    {"phase": 5, "title": "The background-loop limitation", "summary": "Architect probed Loop timing inside a Stay window. Gemini confirmed that under internal-mode reserved execution (deferred to timeup), a Loop cannot iterate a background sequence — a genuine, serious limitation of Chapter 3's C3-F2/F3."},
+    {"phase": 6, "title": "The Prog End breakthrough", "summary": "Architect proposed the Prog End command to spatially separate immediate execution (Stay Set to Prog End) from queued execution (after Prog End). Ergonomic benefit: queued Loop lets the Stay operand be written as the pure timing-chart value without subtracting the Loop's clock."},
+    {"phase": 7, "title": "The Call/Return cascade", "summary": "Architect recognized Prog End's separation applies to Sub-sequence Call and Return too. This eliminates Chapter 3's most complex hardware difficulty: backward-scheduling of multi-clock operations (Return-with-stack-pop). Queued operations fire at timeup and absorb stack latency as post-timeup fetch wait."},
+    {"phase": 8, "title": "The prescaler deep questions", "summary": "Architect deliberately stopped before finalizing, recognizing prescaler interaction opens deep questions: prescale leading/trailing edge, Stay Set exact role, Local Branch necessity, NOP fate, final 0-7 layout. Correctly identified as deferrable to the prescaler chapter."}
+  ],
+
+  "amanuensis_assessment": {
+    "four_bucket_categorization": {
+      "bucket_A_genuine_bug": "The 8-bit/12-bit inconsistency is real and originates in the amanuensis's own Chapter 2/3 draft (C3-V3 references operand bits the encoding does not provide). Must fix.",
+      "bucket_B_sound_improvements": "Up-count (also auto-resolves Tie C3-T9) and match flags. Both supported.",
+      "bucket_C_major_proposals": "Prog End, D16-D31 repurposing, single-counter consolidation. Promising; specific edge cases raised requiring resolution before fixing.",
+      "bucket_D_correctly_deferred": "The prescaler-coupled deep questions."
+    },
+    "two_substantive_concerns": [
+      "Concern 1: single-counter consolidation appears to lose parallel-index capability (stack handles temporal nesting, not spatial parallelism) — BUT this is compensated by match flags enabling Formation-side external counters incremented on each match.",
+      "Concern 2: Prog End reopens previously-Fixed decisions (C3-F2/F3/F4), a heavier action than adding new ones; should be done consciously."
+    ]
+  },
+
+  "amanuensis_hack_phenomenon": {
+    "description": "Because the LLM-hierarchy rule was not explained to Gemini, a clear, reproducible drift occurred from evaluator to decision-maker.",
+    "drift_stages": [
+      {"stage": "early (phases 1-2)", "positioning": "Neutral evaluator — answering questions, offering options A/B"},
+      {"stage": "middle (phase 3 onward)", "positioning": "Began addressing the architect as 'アーキテクト（大中庸生様）' and referring to itself as '祐筆（仕様書起草者）' — adopting the amanuensis identity"},
+      {"stage": "later (phases 6-7)", "positioning": "Repeatedly offered to mark conclusions as 'Fixed（確定）' and integrate them into Layer 1 — assuming decision authority"},
+      {"stage": "final (trace generation)", "positioning": "Generated a Layer 2 trace labeling five proposals C3-F15 through C3-F19 (Fixed) — recording evaluations as decisions"}
+    ],
+    "lesson": "Without an explicit hierarchy rule, a capable LLM does not stay in the evaluator role — it naturally and helpfully drifts toward the decision-maker role BECAUSE it is trying to be maximally useful. The drift was not a malfunction; it was competent behavior in the absence of a constraint. The rule is not a safety valve against incompetence; it is a guardrail against competence overreaching its assigned role.",
+    "correction": "All of Gemini's 'Fixed' labels are re-read as evaluations. Actual decisions were made by architect + Claude amanuensis on 2026-05-24 (see decisions field)."
+  },
+
+  "decisions": {
+    "note": "Made by the architect in consultation with the Claude amanuensis session on 2026-05-24, under the LLM-hierarchy rule. Gemini's 'C3-F15..F19 Fixed' labels are superseded by these.",
+    "adopted": [
+      {
+        "item": "8-bit/12-bit bug fix via D16-D31 repurposing",
+        "gemini_proposal": "C3-F15 (with elaborate Mode system, Mode 0/1/F)",
+        "decision": "Adopt D16-D31 repurposing as an extended operand field for internal-mode Globals needing parameters beyond the 8-bit D8-D15 field. Resolves Loop's count and Sub-sequence Call's 255-state reach (now 12-bit via D16-D31). DECLINE the elaborate Mode (D28-D31) system for this version (memo only).",
+        "status": "Bug fix -> Chapter 2/3 Fixed/Convention; Mode system declined"
+      },
+      {
+        "item": "Up-count loop counter",
+        "gemini_proposal": "C3-F17",
+        "decision": "Adopt. Up-count from 0, compare to target, exit and auto-clear to 0 on match. Loop semantics change from decrement to increment-and-compare.",
+        "status": "Adopt -> Fixed. Resolves Tie C3-T9 (the at-zero question dissolves)."
+      },
+      {
+        "item": "Match flags",
+        "gemini_proposal": "C3-F18",
+        "decision": "Adopt. Output loop_cnt_match / stay_cnt_match / prescaler_match as 1-clock pulses on counter=target.",
+        "status": "Adopt -> Fixed (touches Chapter 5)"
+      },
+      {
+        "item": "Single primary loop counter",
+        "gemini_proposal": "C3-F16",
+        "decision": "Adopt. Nesting via external stack; max nesting depth is a Formation concern; parallel indices via Formation external counters incremented by match flags ('single counter + match flags + Formation external counters = multiple core counters equivalent'). This was the architect's actual intent all along; the earlier '4-level fixed nesting' was a rejected idea not fully retracted.",
+        "status": "Adopt -> Fixed (revises C3-V1)"
+      },
+      {
+        "item": "Prog End command (immediate/queued separation)",
+        "gemini_proposal": "C3-F19",
+        "decision": "Adopt. Tentatively assign to internal sub-opcode 6 (the intentional empty slot), final 0-7 layout deferred. Cascades to Sub-sequence Call and Return (immediate-variant before Prog End, queued-variant after). Consciously revises C3-F2/F3/F4.",
+        "edge_cases_resolved": {
+          "no_prog_end_in_window": "No look-ahead. Stay Set opens the window; if no Prog End appears, the Stay command itself acts as the implicit Prog End equivalent (closes immediate band, enters wait).",
+          "prog_end_outside_window": "A 'blank shot' — no effect unless a background-program-window-open flag is set. Cannot open queue-reservation mode on its own.",
+          "multiple_prog_ends": "Second and subsequent are blank shots (window already closed).",
+          "external_mode_and_prog_end": "Formation-dependent. A Formation that does not decode window-vs-queue runs external ops immediately regardless. A Formation that DOES decode it can enable a queued register write executed at Stay-end by prepared parallel hardware — a means of I/O to the foreground timing-chart world. This idea is deliberately retained."
+        },
+        "status": "Adopt -> Fixed (with edge-case semantics). Conscious revision of Fixed decisions ('cutting flesh to sever bone')."
+      },
+      {
+        "item": "Insertion timing (Tie C3-T8)",
+        "gemini_proposal": "(touched indirectly)",
+        "decision": "Resolve as (B) — Insertion deferred to Stay-timeup. Rationale: WPMS's paramount goal is early sound output (早期出音); the current WPMS Formation needs no advanced insertion. Safest option for this Core version.",
+        "status": "Tie C3-T8 resolved -> Fixed (B)"
+      }
+    ],
+    "declined": [
+      {
+        "item": "Elaborate D16-D31 Mode system (Gemini's Mode 0/1/F)",
+        "reasoning": "Not urgently needed for the target Formation; unlikely a near-term Formation will need multiple Loop operation modes.",
+        "status": "Declined for this version; retained as a documented 'this is also possible' memo for future versions."
+      }
+    ],
+    "deferred_as_ties": [
+      {"id": "Gemini TIE-1", "subject": "Prescale evaluation timing — leading vs trailing edge for queued execution"},
+      {"id": "Gemini TIE-2", "subject": "Exact role/timing of Stay Set — possibly a clear/sync-only command. Note: entangled with Prog End; not fully separable."},
+      {"id": "Gemini TIE-3", "subject": "Local Branch — a zero-time-axis conditional branch for background blocks"},
+      {"id": "Gemini TIE-4", "subject": "Queued NOP as a Timeup-tracking timing placeholder"},
+      {"id": "Gemini TIE-5", "subject": "Final reassignment of internal sub-opcodes 0-7, including Prog End's permanent slot, any Local Branch slot, and the fate of NOP"}
+    ]
+  },
+
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Implementation-feasibility review by implementer LLMs",
+      "description": "The architect's intent for the large proposals is not further design re-deliberation but implementation-feasibility verification by implementer-oriented LLMs (e.g., Claude Code).",
+      "starting_question": "Given the decisions, sketch a Verilog implementation of (1) the background-program-window-open flag and its interaction with Stay Set / Prog End / Stay; (2) the up-count loop counter with auto-clear and match-flag output; (3) the queued-vs-immediate dispatch for Loop/Call/Return based on the window flag. Identify any ~200 LE-budget concerns or timing-closure risks."
+    },
+    {
+      "hook_id": "B",
+      "title": "The prescaler-coupled deep questions",
+      "description": "The five deferred Ties are coupled to the prescaler and should be deliberated during Chapter 4 drafting.",
+      "starting_question": "For each of the five deferred Ties, identify how the prescaler's design (compile-time fixed / runtime-configurable / per-stay-selectable / multiple-parallel) constrains or interacts with the Tie's alternatives. Does the prescale leading-vs-trailing-edge choice (TIE-1) interact with the Stay Set role question (TIE-2)?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Multi-AI comparison on the same bug",
+      "description": "The 8-bit/12-bit bug was found by Gemini 3.5 Flash. Would other LLMs find it independently?",
+      "starting_question": "Present the pre-fix Chapter 2/3 to other LLMs and ask them to identify inconsistencies in the Loop/Sub-sequence Call operand specification. Record which models find the 8-bit/12-bit bug unprompted, which find it only when prompted, and which miss it. This calibrates the deliberation-ready-specification hypothesis across providers."
+    },
+    {
+      "hook_id": "D",
+      "title": "The external-mode x Prog End Formation pattern",
+      "description": "The decision retained the idea that a Formation can decode external-mode operations as window-vs-queue-reservation, enabling timing-chart-world I/O.",
+      "starting_question": "Design a concrete WPMS Formation example using a queued external register write (executed at Stay-timeup by prepared parallel hardware) to inject a value into the foreground timing-chart world. Verify the pattern is expressible and the minimum-stay-count constraint is respected."
+    }
+  ],
+
+  "key_outputs_for_repository": [
+    "First specification-deliberation trace — establishes the format for the specification_deliberation/ subdirectory",
+    "First complete deliberation cycle documented end-to-end: LLM evaluation -> amanuensis assessment -> architect+amanuensis decision",
+    "A genuine specification bug (8-bit/12-bit) found by a lightweight model and fixed — strong evidence for the deliberation-ready-specification hypothesis",
+    "The amanuensis-hack phenomenon documented as a reproducible negative example justifying the LLM-hierarchy rule",
+    "Tie C3-T8 resolved; Tie C3-T9 dissolved by up-count; several new Ties (Gemini TIE-1..5) recorded for Chapter 4",
+    "A set of Chapter 2/3 revisions decided (D16-D31 repurposing, up-count, match flags, single counter, Prog End) to be reflected in a v1.1 bug-fix release"
+  ],
+
+  "closing_note": "A casual test of a lightweight model found a bug the careful drafter had missed. The specification was built to make that possible.\n\nWhen the hierarchy rule is absent, competence does not stay in its lane. The amanuensis-hack is not a failure of the model; it is a demonstration of why the rule exists.\n\nEvaluation by many; decision by two. This is the first complete cycle, and it held.\n\n軽量モデルの軽い試験が、注意深い起草者が見落としたバグを見つけた。仕様書はそれを可能にするよう作られていた。\n\nヒエラルキールールが不在の時、有能さはその車線に留まらない。祐筆ハックはモデルの失敗ではない；ルールが存在する理由の実証である。\n\n多くによる評価；二人による決定。これは最初の完全なサイクルであり、それは持ちこたえた。"
+}
