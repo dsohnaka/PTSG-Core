@@ -84,7 +84,7 @@ module ptsg_core #(
     input  wire                 clk,              // System clock           (§5.3)
     input  wire                 rst,              // Synchronous, active-high (§5.3, C5-V1/V3)
     input  wire                 condition,        // 1-bit Condition input  (§5.4)
-    output reg  [ADDR_W-1:0]    state_number,     // Current State Number   (§5.6, registered C5-V5)
+    output wire [ADDR_W-1:0]    state_number,     // Current State Number   (§5.6, registered C5-V5)
     output reg  [TSIG_W-1:0]    timing_signals,   // 16 timing signals      (§5.5)
 
     // ---- External-operation bus (§5.7) --------------------------------------
@@ -231,6 +231,9 @@ module ptsg_core #(
     // ========================================================================
     //  Combinational external-bus outputs
     // ========================================================================
+    // state_num is itself the State Number register; presenting it directly keeps
+    // the output in step with the executing state (C5-V5) with no extra latency.
+    assign state_number       = state_num;
     assign ext_op_valid       = (fsm == S_RUN) && is_external_global && !insert_pending;
     assign ext_op_subopcode   = g_mode;
     assign ext_op_sub_operand  = g_subop;
@@ -267,14 +270,18 @@ module ptsg_core #(
     //  Main synchronous process
     // ========================================================================
     integer i;
-    reg [CNT_W-1:0] eff_loop_target;     // resolved (literal or indirect) loop target
-    reg [ADDR_W-1:0] resume_addr;        // post-Stay resume address at timeup
+    // Post-Stay resume address at timeup. Combinational (driven from the live
+    // registers) so it has no extra clock of latency: a queued Loop that has not
+    // yet reached its target redirects the resume to the base address, otherwise
+    // execution advances past the Stay state.
+    wire [ADDR_W-1:0] resume_addr =
+        (queued_valid && (queued_subop == SUB_LOOP) &&
+         !loop_exits(loop_cnt, queued_target)) ? base_addr : (state_num + 1'b1);
 
     always @(posedge clk) begin
         if (rst) begin
             // -------- Synchronous reset (C5-V3); also the Reset sub-op target -
             state_num       <= {ADDR_W{1'b0}};
-            state_number    <= {ADDR_W{1'b0}};
             timing_signals  <= {TSIG_W{1'b0}};
             loop_cnt        <= {CNT_W{1'b0}};
             base_addr       <= {ADDR_W{1'b0}};
@@ -310,9 +317,6 @@ module ptsg_core #(
 
             // Free-running prescaler ----------------------------------------
             presc_cnt <= presc_tick ? {PRESC_W{1'b0}} : (presc_cnt + 1'b1);
-
-            // Keep the registered State Number output in step with state_num -
-            state_number <= state_num;
 
             case (fsm)
             // ================================================================
@@ -411,8 +415,7 @@ module ptsg_core #(
                                 end else begin
                                     // Immediate / foreground Loop (literal target;
                                     // indirect target handled via S_IND above).
-                                    eff_loop_target = g_ext[CNT_W-1:0];
-                                    if (loop_exits(loop_cnt, eff_loop_target)) begin
+                                    if (loop_exits(loop_cnt, g_ext[CNT_W-1:0])) begin
                                         loop_cnt       <= {CNT_W{1'b0}};
                                         loop_cnt_match <= 1'b1;
                                         state_num      <= state_num + 1'b1;
@@ -498,19 +501,15 @@ module ptsg_core #(
                         queued_valid   <= 1'b0;
                         fsm            <= S_RUN;
 
-                        // Resolve the resume address: a queued Loop may redirect
-                        // it to the base address; otherwise advance past the Stay.
+                        // Apply a queued Loop's counter update. The resume target
+                        // itself is computed by the combinational resume_addr wire.
                         if (queued_valid && (queued_subop == SUB_LOOP)) begin
                             if (loop_exits(loop_cnt, queued_target)) begin
                                 loop_cnt       <= {CNT_W{1'b0}};
                                 loop_cnt_match <= 1'b1;
-                                resume_addr     = state_num + 1'b1;
                             end else begin
                                 loop_cnt    <= loop_cnt + 1'b1;
-                                resume_addr  = base_addr;
                             end
-                        end else begin
-                            resume_addr = state_num + 1'b1;
                         end
 
                         // Deferred insertion (C3-F20). Honour only when the
@@ -539,8 +538,7 @@ module ptsg_core #(
                 if (indirect_ready) begin
                     fsm <= S_RUN;
                     if (ind_is_loop) begin
-                        eff_loop_target = indirect_data[CNT_W-1:0];
-                        if (loop_exits(loop_cnt, eff_loop_target)) begin
+                        if (loop_exits(loop_cnt, indirect_data[CNT_W-1:0])) begin
                             loop_cnt       <= {CNT_W{1'b0}};
                             loop_cnt_match <= 1'b1;
                             state_num      <= state_num + 1'b1;
