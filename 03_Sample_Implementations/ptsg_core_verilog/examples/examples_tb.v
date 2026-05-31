@@ -14,7 +14,17 @@ module examples_tb;
     wire indirect_req; wire [1:0] indirect_purpose;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, k, toggles;
-    reg lastled, seenF0, seen8, seen_extwr;
+    reg lastled, seenF0, seen8;
+
+    // Clocked monitor: latch the canonical background external-register write the
+    // moment it appears on the bus (ext_op_valid is a one-clock pulse).
+    reg seen_extwr;
+    always @(posedge clk) begin
+        if (rst) seen_extwr <= 1'b0;
+        else if (ext_op_valid && ext_op_subopcode==4'd1 &&
+                 ext_op_sub_operand==8'h10 && ext_op_data==16'hABCD)
+            seen_extwr <= 1'b1;
+    end
 
     ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1)) dut (
         .clk(clk), .rst(rst), .condition(condition),
@@ -33,6 +43,8 @@ module examples_tb;
 
     integer j;
     task clear_imem; begin for (j=0;j<32;j=j+1) dut.imem[j]=32'h00000000; end endtask
+    // Programs are short; clear_imem zeroes the rest. (The simulator may print a
+    // harmless "not enough words" note because the files are shorter than IMEM.)
     task load; input [1023:0] f; begin
         rst=1; @(posedge clk); clear_imem; $readmemh(f, dut.imem); @(posedge clk); rst=0;
     end endtask
@@ -72,12 +84,9 @@ module examples_tb;
         if (seen8) $display("PASS multi_signal: walked ones up to 0x0008");
         else begin $display("FAIL multi_signal: never reached 0x0008"); errors=errors+1; end
 
-        // ---- background_execution ----
+        // ---- background_execution (monitored by the clocked always block) ----
         load("examples/background_execution.hex");
-        seen_extwr=0;
-        for (k=0;k<20;k=k+1) begin @(posedge clk); #1;
-            if (ext_op_valid && ext_op_subopcode===4'd1 &&
-                ext_op_sub_operand===8'h10 && ext_op_data===16'hABCD) seen_extwr=1; end
+        repeat (20) @(posedge clk);
         if (seen_extwr) $display("PASS background: ext write fired in Stay window (subop1 @0x10 = 0xABCD)");
         else begin $display("FAIL background: ext_op never seen"); errors=errors+1; end
 
