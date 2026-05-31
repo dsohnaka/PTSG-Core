@@ -17,6 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (instruction memory, decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). |
 | `ptsg_core_tb.v` | Self-checking testbench (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
+| `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
 
