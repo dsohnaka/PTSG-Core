@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "date": "2026-05-23",
+    "topic": "Evolution of Loop Dynamics, Counter Architecture, and Prog End",
+    "participants": [
+      "Architect (Tsuneo Ohnaka)",
+      "Amanuensis (AI Collaborator)"
+    ]
+  },
+  "context": "Discussion originated from the 8-bit sub-operand limitation of the Loop command. It evolved into a major architectural refinement, decoupling immediate execution from queued execution, and transitioning to an up-count architecture.",
+  "decisions": {
+    "fixed": [
+      {
+        "id": "C3-F15",
+        "description": "Repurpose D16-D31 in Global commands into Mode (D28-D31) and secondary sub-operands, enabling Base-Set-free local loops and 20-bit large loops."
+      },
+      {
+        "id": "C3-F16",
+        "description": "Consolidate to a single primary loop counter due to the adoption of an external stack for auto-nesting."
+      },
+      {
+        "id": "C3-F17",
+        "description": "Transition to an up-count system from 0, with automatic clear to 0 upon reaching the target value."
+      },
+      {
+        "id": "C3-F18",
+        "description": "Expose 1-clock match flags (loop_cnt_match, stay_cnt_match, prescaler_match) to external logic for hardware optimization."
+      },
+      {
+        "id": "C3-F19",
+        "description": "Introduce 'Prog End' command. Commands between Stay Set and Prog End are executed immediately (forward-scheduled). Commands after Prog End are queued (backward-scheduled at Timeup)."
+      }
+    ],
+    "deferred_ties": [
+      {
+        "id": "C3-T10",
+        "description": "Prescaler evaluation timing: Leading edge vs Trailing edge for queued executions."
+      },
+      {
+        "id": "C3-T11",
+        "description": "Exact execution timing and semantics of 'Stay Set' (whether it should only be a pre-clear/sync command to avoid jitter)."
+      },
+      {
+        "id": "C3-T12",
+        "description": "Necessity of a 'Local Branch' (zero-time-axis-cost conditional branch) for immediate background execution blocks."
+      },
+      {
+        "id": "C3-T13",
+        "description": "Potential of queued 'NOP' as a Timeup-tracking timing placeholder."
+      },
+      {
+        "id": "C3-T14",
+        "description": "Final reassignment of internal control sub-opcodes 0-7 to accommodate Prog End and Local Branch."
+      }
+    ]
+  }
+}
