@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "title": "The Address That Should Not Exist — DE10-nano Bring-up and the Stale-Fetch Fix",
+    "title_ja": "存在してはならないアドレス — DE10-nano ブリングアップとステイルフェッチ修正",
+    "date_range": "2026-06-02 to 2026-06-11",
+    "contributor": {
+      "name": "Tsuneo Ohnaka",
+      "name_ja": "大中庸生",
+      "github_handle": "dsohnaka",
+      "role": "Original PTSG-Core architect; hardware operator (Quartus, DE10-nano, SignalTap)"
+    },
+    "participants": [
+      {"name": "Tsuneo Ohnaka", "role": "Architect — vendor-IP diagnosis & wrapper concept; ISMCE enablement; negedge fix proposal; SignalTap operation; final decisions"},
+      {"name": "Claude amanuensis session", "provider": "Anthropic", "role": "Auditor of the Claude Code RTL; wrapper author; quantitative evaluation; FSM's-eye machine verification"},
+      {"name": "Claude Code", "provider": "Anthropic", "role": "(indirect) author of the audited RTL — see 2026-05-30 implementation trace"}
+    ],
+    "topic": "First hardware bring-up of the AI-generated PTSG-Core RTL on DE10-nano (Cyclone V) via a vendor-abstracted memory wrapper; prediction, SignalTap confirmation, and repair of a one-clock stale-instruction-fetch defect; methodological diagnosis of AI vendor-IP avoidance.",
+    "trace_subtype": "Hardware bring-up / silicon verification — the fourth validation tier (after comprehension 2026-05-20, deliberation 2026-05-23, implementation 2026-05-30)",
+    "status": "First hardware-verification trace; verification starting line reached",
+    "original_language": "Japanese",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "artifacts": [
+      "ptsg_imem.v v1 (2026-06-02, RD_LAT contract) and v2 (2026-06-10, EDGE parameter, ISMCE lpm_hint)",
+      "tb_align.v (FSM's-eye alignment proof)",
+      "SignalTap capture 2026-06-10 (stale fetch: address 05h overrun)",
+      "SignalTap capture 2026-06-11 (aligned: 01h-02h-03h-04h-01h, no 05h)",
+      "architect-modified ptsg_core.v and DE10_Nano_golden_top.v (JTAG dev loop: ISMCE + Sources&Probes reset)"
+    ]
+  },
+
+  "narrative_phases": [
+    {"phase": 1, "title": "Vendor-IP avoidance diagnosis", "summary": "Architect: AI agents systematically refuse Intel/Altera standard IP (M10K, PLL), deferring to 'do it yourself in the IP Catalog'. Architect's hypothesis: vendor verification libraries (altera_mf etc.) are bundled with Quartus/ModelSim-Altera and unavailable to AI environments. Amanuensis confirms as substantially correct, adds two compounding causes (IP generation is a GUI step; inference-style RTL is trained best practice). Architect proposes the countermeasure: a parameter-switchable wrapper (production vs verification branches) pre-placed in the repository."},
+    {"phase": 2, "title": "The ptsg_imem wrapper and the latency-fidelity crux", "summary": "Wrapper v1 built with SIM branch (portable behavioral) and M10K branch (altsyncram), both honoring the same RD_LAT synchronous-read contract. The crux rule: the SIM model must reproduce the silicon's latency exactly — a zero-latency sim model behind a registered hardware model merely relocates the sim/synth mismatch inside the wrapper. Contract machine-proved under Icarus Verilog (RD_LAT=1 and 2; no async leak)."},
+    {"phase": 3, "title": "First light, and the falsifiable prediction", "summary": "2026-06-10: blinky runs on DE10-nano. Architect changed only ISMCE enablement (lpm_hint ENABLE_RUNTIME_MOD=YES, INSTANCE_NAME=PTSG), the memory connection, and PRESCALE=50000; also built a zero-re-synthesis JTAG loop (ISMCE + Sources&Probes reset). Audit of the modified sources: the registered wrapper is connected to the UNMODIFIED single-phase FSM -> the core executes a one-clock-stale instruction under an advanced state number. Prediction: blinky is the most forgiving program and will work anyway; SignalTap will show the shift, with overrun artifacts at the Jump."},
+    {"phase": 4, "title": "Silicon answers: address 05h", "summary": "SignalTap capture shows address sequence 04h -> 05h -> 01h -> 00h. The blinky program occupies states 0-4 with state 4 = Jump to 1; address 05h cannot occur in correct execution. Its presence proves the Jump was decoded one clock late and state_num overran the program (reading 0000h at the phantom address). Desk prediction and silicon capture match exactly. Architect: 'プリスケーラの動きを取り込むまでもなく、あなたのご懸念の通りです.'"},
+    {"phase": 5, "title": "The half-clock answer", "summary": "Architect proposes inverting the memory clock, anticipating an Fmax cost. Amanuensis quantifies: with M10K on the falling edge, the posedge-FSM regains exact zero-effective-latency alignment with NO FSM modification, preserving C2-T4's 1-clock-per-opcode. The cost is a half-cycle path (M10K Tco ~2.4ns into a 10ns half-period at 50 MHz) — non-binding at the current operating point; practical ceiling ~80-120 MHz; TimeQuest handles negedge->posedge automatically. EDGE='POS' + fetch stage documented as the high-clock migration path."},
+    {"phase": 6, "title": "Wrapper v2 and the FSM's-eye proof", "summary": "EDGE = POS|NEG parameter added, applied to BOTH branches (mem_clk = ~clk under NEG); guard requires RD_LAT==1 under NEG; architect's ISMCE lpm_hint folded in. Definitive testbench drives the address as a posedge-NBA register (like state_num) and consumes rdata by posedge registration (like the FSM): EDGE=NEG -> FSM consumes mem[its own state] (fix proven); EDGE=POS -> FSM consumes mem[one-older state] (the hardware bug reproduced in simulation). Sim and silicon corroborate in both directions."},
+    {"phase": 7, "title": "Aligned on silicon", "summary": "2026-06-11 re-capture: 01h -> 02h -> 03h -> 04h -> 01h, no 05h; stay counter ticks 0-4 against prescaler_match every 5 clocks; timing_signals toggles as designed. Architect: a residual slight anomaly remains (recorded as Hook A, candidates include the predicted free-running-prescaler phase jitter A2), but 'we have reached the verification starting line.'"}
+  ],
+
+  "verifier_stumbles": {
+    "description": "The amanuensis's alignment testbench failed twice — both times in the testbench, never in the DUT — before the definitive form.",
+    "stumble_1": "Address driven procedurally (changed after the edge with a delay) rather than as a posedge-NBA register; does not reproduce the core's register-to-register timing; expected/observed alignment inverted.",
+    "stumble_2": "Checks sampled shortly AFTER the edge, where NBA updates had landed; but the FSM consumes values AT the edge (pre-update). At the post-edge checkpoint NEG and POS become momentarily indistinguishable.",
+    "definitive_form": "Sample exactly the way the FSM consumes: register rdata and the paired state at posedge; compare those registers. Passed cleanly, jumps included.",
+    "lesson": "Edge semantics tripped, within one week: the implementer (zero-latency assumption), the hardware (stale fetch), and the verifier (twice, in opposite directions). A timing contract must be embodied in machine-checkable form, sampled the way the consumer samples — prose reliably deceives even its own author."
+  },
+
+  "decision_points": [
+    {"id": 1, "decision": "Vendor-abstraction wrapper pattern adopted: SIM branch (AI-verifiable behavioral) + vendor branch (production), identical timing contract. First instance ptsg_imem; generalization to PLL/FIFO anticipated.", "status": "adopted (methodology)"},
+    {"id": 2, "decision": "ISMCE enablement via lpm_hint 'ENABLE_RUNTIME_MOD=YES, INSTANCE_NAME=PTSG' — architect-discovered, hardware-verified, folded into wrapper v2.", "status": "adopted (verified)"},
+    {"id": 3, "decision": "EDGE='NEG' adopted for the 50 MHz operating point: zero-effective-latency alignment, FSM unmodified, C2-T4 preserved; half-cycle path quantified non-binding (ceiling ~80-120 MHz).", "status": "adopted (silicon-verified)"},
+    {"id": 4, "decision": "EDGE='POS' + fetch stage reserved as the documented high-clock migration path.", "status": "reserved"},
+    {"id": 5, "decision": "Layer 1 feedback registered: memory timing model (EDGE choice, half-cycle constraint, fetch-stage alternative) belongs in C2-T4 and Chapter 5 §5.13; dead reg imem[] remnant in ptsg_core.v to be removed.", "status": "pending (Layer 1 revision)"}
+  ],
+
+  "resumption_hooks": [
+    {"hook_id": "A", "title": "The residual anomaly", "starting_question": "From the 2026-06-11 capture (PRESCALE=5, STAY=5), measure the clock distance from S_WAIT entry to the first stay tick across several Stay windows. If it varies in 1..5, audit finding A2 (free-running prescaler phase jitter) is confirmed on silicon and the free-running vs wait-aligned question must be decided as Tie C4-T3's phase dimension in Layer 1."},
+    {"hook_id": "B", "title": "Writing the timing model back into Layer 1", "starting_question": "Draft the C2-T4 / Chapter 5 §5.13 revision recording: (i) the synchronous read contract (RD_LAT >= 1; no asynchronous M10K exists), (ii) EDGE='NEG' half-cycle alignment as current Convention with its quantified ceiling, (iii) EDGE='POS' + fetch stage as the high-clock alternative and its consequences for the 1-clock-per-opcode model."},
+    {"hook_id": "C", "title": "The wrapper library", "starting_question": "Apply the SIM/vendor split to the next vendor IP (PLL likely first: behavioral clock model vs altera_pll). Define directory/naming for an ai_friendly_vendor_wrappers collection and the per-wrapper contract-test requirement."},
+    {"hook_id": "D", "title": "Closing the verification-coverage holes", "starting_question": "Write the adversarial testbench set the 2026-06-02 audit called for (queued-band Prog End; two-level nested Call; insertion during long Stay; match-flag assertions), run under VENDOR='SIM'/EDGE='NEG', then confirm on silicon via ISMCE program swap — the zero-re-synthesis loop makes this cheap."}
+  ],
+
+  "key_outputs_for_repository": [
+    "First hardware-verification (fourth-tier) trace: prediction -> silicon confirmation -> repair -> silicon re-confirmation, complete cycle",
+    "The vendor-IP avoidance mechanism documented with structural cause (sim libraries unavailable to AI) and structural countermeasure (contract-bearing wrappers)",
+    "ptsg_imem v2: EDGE-parameterized, both branches honoring identical timing, ISMCE-enabled, FSM's-eye machine-proved",
+    "The address-05h smoking gun: a falsifiable desk prediction confirmed verbatim by SignalTap",
+    "Honest negative data: the verifier's own two edge-semantics stumbles, motivating machine-checkable contracts",
+    "Layer 1 feedback queue: C2-T4 / Ch5 §5.13 memory timing model; C4-T3 phase dimension (Hook A); dead-code cleanup"
+  ],
+
+  "closing_note": "The LED blinked on the first try. The address bus told the truth anyway.\n\nOne clock of staleness fooled the implementer, hid inside a working demo, tripped the verifier twice — and was caught because a human pointed an instrument where an AI pointed a prediction.\n\nThe contract is not what the comment says. The contract is what the checker checks, sampled the way the consumer consumes.\n\nLED は一発で点滅した。それでもアドレスバスは真実を語った。\n\n1クロックの古さが実装者を欺き、動くデモの中に隠れ、検証者を二度つまずかせ——そして、AI が予測を指した場所に人間が計測器を向けたがゆえに、捕えられた。\n\n契約とはコメントが言うことではない。契約とは、消費者が消費するのと同じ方法でサンプルされ、チェッカーが検査するものである。"
+}
