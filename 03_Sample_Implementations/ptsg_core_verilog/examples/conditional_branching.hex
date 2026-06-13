@@ -1,8 +1,0 @@
-// conditional_branching — wait for Condition, pulse, then restart
-// State table:
-//   0: Branch operand 0   (self-loop "wait for Condition"; advance when condition=1)
-//   1: Global NOP, timing_signals = 0x00FF (action pulse once Condition is true)
-//   2: Global Reset       (State Number -> 0, wait again)
-00000002
-00FF0700
-00000000
