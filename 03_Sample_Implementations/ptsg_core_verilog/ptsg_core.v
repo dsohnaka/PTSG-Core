@@ -72,13 +72,13 @@ module ptsg_core #(
     parameter integer CNT_W       = 12,           // Stay / loop counter width      (C3-V2)
     parameter integer IMEM_DEPTH  = 256,          // Instruction-memory depth (<= 4096)
     // ---- Prescaler (C4-T2 option A: compile-time fixed) ---------------------
-    parameter integer PRESCALE    = 1,            // System-clock divider for the time axis (>=1)
+    parameter integer PRESCALE    = 5,            // System-clock divider for the time axis (>=1)
     parameter integer PRESC_W     = 32,           // Prescaler counter width
     // ---- External stack data layout ----------------------------------------
     //   {ins_flag, base[11:0], loop[11:0], state[11:0]} = 1 + 12 + 12 + 12 = 37
     parameter integer STACK_W     = 1 + ADDR_W + CNT_W + ADDR_W,
     // ---- Instruction-memory initialisation (simulation: hex; Quartus: .mif) -
-    parameter         INIT_FILE   = ""            // $readmemh file, or "" for none
+    parameter         INIT_FILE   = "blinky_with_prescaler.hex"            // $readmemh file, or "" for none
 ) (
     // ---- Mandatory pins (Chapter 5 §5.2) ------------------------------------
     input  wire                 clk,              // System clock           (§5.3)
@@ -200,7 +200,22 @@ module ptsg_core #(
     // ========================================================================
     //  Combinational instruction fetch and field decode (Chapter 2 §2.2)
     // ========================================================================
-    wire [DATA_W-1:0] instr   = imem[state_num];
+    // 【修正前】
+    // wire [DATA_W-1:0] instr = imem[state_num];
+    //
+    // 【修正後】
+    //reg [DATA_W-1:0] instr;
+    //always @(posedge clk) begin
+    //    instr <= imem[state_num];
+    //end
+    wire [DATA_W-1:0]	instr;
+    ptsg_imem ptsg_imem(
+    	.clk	(clk),
+    	.addr	(state_num),
+    	.rdata	(instr)
+    	
+    );
+    
     wire [3:0]        opcode  = instr[3:0];        // D0-D3
     wire [11:0]       operand = instr[15:4];       // D4-D15
     wire [15:0]       tsig    = instr[31:16];      // D16-D31 (timing signals)
