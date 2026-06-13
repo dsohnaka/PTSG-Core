@@ -10,13 +10,74 @@
 
 ## What is in this layer / この層の内容
 
-This layer contains the **concrete artifacts** produced by the original author in the course of designing and using the PTSG Core: Verilog/VHDL skeletons of the core itself, instruction list examples, testbenches, and simulation harnesses. These are *illustrative, not normative*.
+This layer contains the **concrete artifacts** produced in the course of designing, implementing, and hardware-verifying the PTSG Core: the Verilog core, instruction-list examples, testbenches, vendor-abstraction wrappers, and board-specific build harnesses. These are *illustrative, not normative*.
 
-この層には、PTSGコアの設計と利用の過程でオリジナル著者が生成する**具体的成果物**が含まれる: コア自体のVerilog/VHDLスケルトン、命令列例、テストベンチ、シミュレーションハーネス。これらは*例示的であり規範的ではない*。
+この層には、PTSGコアの設計・実装・実機検証の過程で生成された**具体的成果物**が含まれる: Verilogコア、命令列例、テストベンチ、ベンダ抽象化ラッパー、ボード固有ビルドハーネス。これらは*例示的であり規範的ではない*。
 
 **This layer covers the Core only.** Formation-specific implementations (external register modules, Condition logic, peripheral interfaces) live in their respective Formation repositories.
 
 **本層はコアのみをカバーする。** フォーメーション固有の実装（外部レジスタモジュール、Conditionロジック、ペリフェラルインターフェース）はそれぞれのフォーメーションリポジトリに存在する。
+
+---
+
+## Directory structure / ディレクトリ構造
+
+Layer 3 separates four kinds of artifact with different lifetimes and different readers — the same discipline that Layer 1 calls Core-Formation separation, applied to the repository itself:
+
+Layer 3 は、寿命と読者の異なる四種類のアーティファクトを分離する——Layer 1 が Core-Formation 分離と呼ぶ規律そのものを、リポジトリ自身に適用したものである:
+
+```
+03_Sample_Implementations/
+├── examples/                     ← Instruction lists (.hex/.mif). Implementation-INDEPENDENT:
+│                                    the same programs run on any conforming Core implementation.
+│                                    命令列。実装非依存: 同じプログラムが任意の準拠コア実装で走る。
+├── ptsg_core_verilog/            ← The Core itself. Device-independent RTL + self-checking testbench.
+│                                    コア本体。デバイス非依存 RTL + 自己チェックテストベンチ。
+├── ai_friendly_vendor_wrappers/  ← Vendor-abstracted reusable parts (memory, later PLL/FIFO…),
+│                                    each with a SIM branch an AI agent can fully verify and a
+│                                    vendor branch the human synthesizes — same timing contract.
+│                                    ベンダ抽象化された再利用部品。AI が完全検証できる SIM ブランチと
+│                                    人間が合成するベンダブランチ——同一タイミング契約。
+└── board_harnesses/              ← Board-specific glue: top-level wrappers, pin constraints,
+                                     project files, instrument configs. Per-board subdirectories.
+                                     ボード固有の貼り付け: トップ層、ピン制約、プロジェクト、計測器設定。
+```
+
+| You want to… / したいこと | Go to / 行き先 |
+|---|---|
+| Understand or re-implement the Core / コアを理解・再実装する | `ptsg_core_verilog/` (after Layers 1 & 2) |
+| Run PTSG programs in simulation / シミュレーションで PTSG プログラムを走らせる | `examples/` + `ptsg_core_verilog/` |
+| Build for real hardware / 実機向けにビルドする | `board_harnesses/<your board>/` |
+| Use vendor IP in an AI-verifiable way / ベンダ IP を AI 検証可能に使う | `ai_friendly_vendor_wrappers/` |
+
+---
+
+## Currently available / 現在利用可能
+
+| Artifact | Status / 状態 |
+|---|---|
+| `ptsg_core_verilog/ptsg_core.v` + `ptsg_core_tb.v` | Self-tests passing under Icarus Verilog. Authored by an AI coding agent from the Layer 1 specification alone (Build Log #5); audited, with documented Tie resolutions and known simplifications in its README. / Icarus Verilog で自己テスト通過。Layer 1 仕様のみから AI コーディングエージェントが執筆(Build Log #5)；監査済み、Tie 解決と既知の簡略化は同 README に文書化。 |
+| `examples/` — 5 instruction-list programs (.hex/.mif pairs) | Simulation-verified. blinky_with_prescaler additionally **verified on silicon** (DE10-nano, 2026-06). / シミュレーション検証済み。blinky_with_prescaler は加えて**実機検証済み**(DE10-nano、2026-06)。 |
+| `ai_friendly_vendor_wrappers/ptsg_imem/` | Instruction-memory wrapper (SIM / Cyclone V M10K branches, EDGE-parameterized, ISMCE-enabled). SIM contract machine-proved; M10K branch **hardware-verified on DE10-nano** (Build Log #6). / 命令メモリラッパー。SIM 契約は機械証明済み；M10K ブランチは **DE10-nano で実機検証済み**(Build Log #6)。 |
+| `board_harnesses/de10_nano/` | DE10-nano (Cyclone V) build harness with a zero-re-synthesis JTAG development loop (In-System Memory Content Editor + In-System Sources & Probes). / 再合成ゼロの JTAG 開発ループを備えた DE10-nano ビルドハーネス。 |
+
+Provenance and the full verification story are documented in the Build Logs (#5 implementation, #6 hardware bring-up) and the corresponding Layer 2 traces.
+
+来歴と検証の全容は Build Log(#5 実装、#6 実機ブリングアップ)と対応する Layer 2 軌跡に文書化されている。
+
+### Instruction list examples / 命令列例
+
+- `blinky_with_prescaler` — The "moved-on-from-counter-Lチカ" reference: a prescaled LED blink. **Silicon-verified.** / 「カウンタLチカからの卒業」リファレンス: プリスケール LED 点滅。**実機検証済み。**
+- `multi_signal_timing` — Multiple timing signals coordinated within a sequence. / シーケンス内で複数のタイミング信号が協調する例。
+- `conditional_branching` — Condition-driven branching with external logic. / 外部ロジックを伴う Condition 駆動分岐。
+- `sub_sequence_branching` — Sub-sequence call and return (using the **Sub-sequence Call** internal sub-opcode + Return). / サブシーケンス呼び出しと復帰(**Sub-sequence Call** 内部サブオペコード + Return を用いる)。
+- `background_execution` — Global commands executing during Stay (the signature PTSG pattern). / Stay 中にグローバル命令が実行される例(PTSG の特徴的パターン)。
+
+### Still planned / 引き続き計画中
+
+- `ptsg_core_vhdl/` — Equivalent VHDL skeleton (community demand permitting). / 等価な VHDL スケルトン(コミュニティ需要に応じて)。
+- `ptsg_simulator/` — A standalone PTSG simulator (likely web-based), closing the feedback loop for AI agents authoring PTSG code: write an instruction list, simulate, observe timing patterns, iterate — without human-in-the-loop FPGA synthesis. One of the longer-term goals of the PTSG ecosystem. / 独立 PTSG シミュレータ(おそらくウェブベース)。PTSG コードを作成する AI エージェントのフィードバックループを閉じる: 命令列を書き、シミュレートし、タイミングパターンを観察し、反復する——人間介在の FPGA 合成なしに。PTSG エコシステムの長期目標の一つ。
+- Additional vendor wrappers (PLL first candidate) and board harnesses as the project reaches them. / 追加のベンダラッパー(PLL が第一候補)とボードハーネス。
 
 ---
 
@@ -37,57 +98,11 @@ This distinction is the structural innovation of Open Prompt. Forking the sample
 
 ---
 
-## Planned artifacts / 予定アーティファクト
-
-*Sample implementations are accumulated over time as the project progresses. The list below reflects the current plan.*
-*サンプル実装はプロジェクトの進展とともに蓄積される。以下は現在の計画を反映する。*
-
-### Core implementation / コア実装
-
-- `ptsg_core_verilog/` — Reference Verilog skeleton of the PTSG Core (instruction decoder, state memory, opcode handlers, sub-opcode decoder, background execution mechanism, timing signal latch) / PTSGコアのリファレンスVerilogスケルトン（命令デコーダ、ステートメモリ、オペコードハンドラ、サブオペコードデコーダ、裏実行機構、タイミング信号ラッチ）
-- `ptsg_core_vhdl/` — Equivalent VHDL skeleton (optional, depending on community demand) / 等価なVHDLスケルトン（オプション、コミュニティ需要に応じて）
-
-### Testbench and verification / テストベンチと検証
-
-- `ptsg_core_testbench/` — Self-checking testbench exercising all 4 opcodes, sub-opcodes, background execution, and external interface protocols / 4オペコード全て、サブオペコード、裏実行、外部インターフェースプロトコルを行使する自己チェックテストベンチ
-- `ptsg_core_signaltap_examples/` — SignalTap II configurations for debugging PTSG Core on real FPGA hardware / 実FPGAハードウェア上でPTSGコアをデバッグするためのSignalTap II構成
-
-### Instruction list examples / 命令列例
-
-- `examples/blinky_with_prescaler.mif` — The "moved-on-from-counter-Lチカ" reference example, showing how a 1-second LED blink is structured in PTSG with the prescaler / 「カウンタLチカからの卒業」リファレンス例、プリスケーラを用いてPTSGで1秒LED点滅がどう構造化されるかを示す
-- `examples/multi_signal_timing.mif` — Example demonstrating multiple timing signals coordinated within a sequence / シーケンス内で複数のタイミング信号が協調する例を示す
-- `examples/conditional_branching.mif` — Example demonstrating Condition-driven branching with external logic / 外部ロジックを伴うCondition駆動分岐の例を示す
-- `examples/sub_sequence_branching.mif` — Example demonstrating sub-sequence call and return (using Branch + Return opcode) / サブシーケンス呼び出しと復帰の例を示す（Branch + Return命令を用いる）
-- `examples/background_execution.mif` — Example demonstrating Global commands executing during Stay (the signature PTSG pattern) / Stay中にグローバル命令が実行される例を示す（PTSGの特徴的パターン）
-
-### Simulation harness / シミュレーションハーネス
-
-- `ptsg_simulator/` — A standalone PTSG simulator (likely web-based for accessibility), enabling AI agents and learners to verify instruction sequences without an FPGA / 独立PTSGシミュレータ（アクセシビリティのためおそらくウェブベース）、AIエージェントと学習者がFPGAなしで命令シーケンスを検証することを可能にする
-
-The simulator deserves a special note: it is the piece that closes the feedback loop for AI agents authoring PTSG code. With a working simulator, an AI agent can write an instruction list, simulate it, observe the resulting timing signal patterns and state transitions, and iterate — all within the agent's own execution loop, without human-in-the-loop FPGA synthesis.
-
-シミュレータには特別な注釈が必要である: これはPTSGコードを作成するAIエージェントのフィードバックループを閉じる部品である。動作するシミュレータがあれば、AIエージェントは命令列を書き、シミュレートし、結果のタイミング信号パターンとステート遷移を観察し、反復できる——すべてエージェント自身の実行ループ内で、人間が介在するFPGA合成なしに。
-
-This is one of the longer-term goals of the PTSG ecosystem.
-
-これはPTSGエコシステムのより長期的な目標の一つである。
-
-### Currently available / 現在利用可能
-
-*To be added as the project progresses.*
-*プロジェクト進展に応じて追加。*
-
----
-
 ## Per-artifact licenses / アーティファクトごとのライセンス
 
 Unless specified otherwise within a subdirectory, all sample implementations are released under the **MIT License**. Subdirectories with different licenses will contain their own `LICENSE` file.
 
 サブディレクトリ内で別途指定がない限り、すべてのサンプル実装は**MITライセンス**で公開される。異なるライセンスを持つサブディレクトリは独自の`LICENSE`ファイルを含む。
-
-Standard MIT terms: copyright notice and license text must be included in substantial portions of redistributions; provided "as is" without warranty.
-
-標準的なMIT条項: 再配布のかなりの部分には著作権表示とライセンス文を含めなければならない；保証なしで「現状のまま」提供される。
 
 ---
 
@@ -101,19 +116,15 @@ Standard open-source practice. Follow MIT terms. Your fork is a derivative work.
 
 ### If you want to learn from this and build your own / これから学んで自身のものを構築したい場合
 
-Read the samples for understanding, but **do not begin by copying them**. Instead, read Layers 1 and 2, then implement from scratch (with or without LLM assistance). Use the samples only for comparison after your own implementation exists.
+Read the samples for understanding, but **do not begin by copying them**. Instead, read Layers 1 and 2, then implement from scratch (with or without LLM assistance). Use the samples only for comparison after your own implementation exists. This preserves the Open Prompt structure: your implementation is genuinely yours.
 
-理解のためにサンプルを読むが、**コピーから始めない**こと。代わりに第1層と第2層を読み、ゼロから実装する（LLM補助の有無を問わず）。自身の実装が存在した後の比較のみのために、サンプルを使う。
-
-This is the recommended path because it preserves the Open Prompt structure: your implementation is genuinely yours, not a fork of someone else's code.
-
-この経路を推奨する理由はOpen Prompt構造を保持するからである: あなたの実装は本当にあなた自身のものであり、他人のコードのフォークではない。
+理解のためにサンプルを読むが、**コピーから始めない**こと。代わりに第1層と第2層を読み、ゼロから実装する（LLM補助の有無を問わず）。自身の実装が存在した後の比較のみのために、サンプルを使う。これがOpen Prompt構造を保持する: あなたの実装は本当にあなた自身のものである。
 
 ### If you want to build a Formation / フォーメーションを構築したい場合
 
-Layer 3 of this Core repository gives you a working PTSG Core to instantiate inside your Formation. Your Formation will surround it with external registers, Condition logic, work memory, and peripheral interfaces specific to your application. Publish your Formation as its own Open Prompt repository.
+Layer 3 gives you a working PTSG Core to instantiate inside your Formation. Your Formation surrounds it with external registers, Condition logic, work memory, and peripheral interfaces specific to your application. Publish your Formation as its own Open Prompt repository.
 
-本コアリポジトリのLayer 3は、あなたのフォーメーション内部でインスタンス化する動作するPTSGコアを与える。あなたのフォーメーションは、あなたの応用に固有の外部レジスタ、Conditionロジック、ワークメモリ、ペリフェラルインターフェースでそれを取り巻くことになる。フォーメーションを独自のOpen Promptリポジトリとして公開する。
+Layer 3 は、あなたのフォーメーション内部でインスタンス化する動作するPTSGコアを与える。フォーメーションを独自のOpen Promptリポジトリとして公開する。
 
 ### If you want to contribute / 貢献したい場合
 
@@ -125,13 +136,9 @@ See the root-level `CONTRIBUTING.md`. Direct contributions to the original autho
 
 ## Why "samples," not "the implementation" / なぜ「実装」ではなく「サンプル」か
 
-Calling these "the implementation" would imply that they are the canonical answer. They are not. They are **one possible answer**, made by one engineer (the original author), under one set of constraints (the original author's hardware, time, error budget, and aesthetic preferences), at one moment in time.
+Calling these "the implementation" would imply that they are the canonical answer. They are not. They are **one possible answer**, made under one set of constraints, at one moment in time. Other engineers — and other AI agents — under different constraints will produce different implementations from the same Layer 1 and Layer 2 inputs. Those implementations are equally legitimate. **The instruction set is the commons. The implementations are the contributions.**
 
-これらを「実装」と呼ぶことは、それらが正典的な答えであることを含意する。そうではない。それらは**一つの可能な答え**であり、一人のエンジニア（オリジナル著者）が、一組の制約（オリジナル著者のハードウェア、時間、誤差予算、美的選好）のもとで、一時点で作成したものである。
-
-Other engineers — under different constraints, with different aesthetic preferences, on different hardware, at different moments in time — will produce different implementations from the same Layer 1 and Layer 2 inputs. Those implementations are equally legitimate. **The instruction set is the commons. The implementations are the contributions.**
-
-他のエンジニアは——異なる制約のもとで、異なる美的選好を持ち、異なるハードウェア上で、異なる時点で——同じ第1層と第2層の入力から異なる実装を生み出す。それらの実装は等しく正当である。**命令セットは共有財産である。実装は貢献である。**
+これらを「実装」と呼ぶことは、それらが正典的な答えであることを含意する。そうではない。それらは**一つの可能な答え**であり、一組の制約のもとで、一時点で作成されたものである。他のエンジニア——そして他の AI エージェント——は異なる制約のもとで、同じ第1層・第2層の入力から異なる実装を生み出す。それらは等しく正当である。**命令セットは共有財産である。実装は貢献である。**
 
 ---
 
