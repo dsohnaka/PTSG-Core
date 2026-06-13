@@ -1,0 +1,17 @@
+<session jtag_chain="DE-SoC [USB-1]" jtag_device="@2: 5CSEBA6(.|ES)/5CSEMA6/.. (0x02D020DD)">
+  <display_attributes is_max_probe_read_interval="1" is_write_immediate="1" probe_read_interval="1" probe_read_interval_units="s"/>
+  <instance enable_logging="true" entity_name="UNUSED" is_auto_node="true" name="altsource_probe:probeIP">
+    <node_ip_info instance_id="0" mfg_id="110" node_id="9" version="0"/>
+    <sources>
+      <source name="source[0]" value="false"/>
+    </sources>
+    <probes>
+      <probe name="altera_reserved_unconnected_port"/>
+    </probes>
+    <view>
+      <view_node expanded="true" index="0" node_type="probe" view_type="independent"/>
+      <view_node expanded="true" index="0" node_type="source" view_type="independent"/>
+    </view>
+    <log data="0000" max_size="8" size="8" time="501202A600000000501202A600000000501202A600000000501202A600000000601202A600000000601202A600000000601202A600000000601202A600000000" width="2"/>
+  </instance>
+</session>
