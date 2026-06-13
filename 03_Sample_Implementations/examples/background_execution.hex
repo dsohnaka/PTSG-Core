@@ -1,0 +1,15 @@
+// background_execution — a Global executes during a Stay window
+// NOTE: external sub-opcode 1 ("external register write") is the cross-Formation
+// convention (Chapter 2 §2.7); its meaning is supplied by a Formation. This
+// example is illustrative — on the bare Core it drives the external-operation bus
+// (ext_op_valid + subopcode/sub_operand/data) for one clock.
+// State table:
+//   0: Global Stay Set            (open the Stay window)
+//   1: Global external sub-op 1, sub_operand=0x10, data=0xABCD
+//        -> background-executed register write (D8-D15=addr, D16-D31=data)
+//   2: Stay 100, timing_signals = 0x0001  (the wait that hosts the background op)
+//   3: Global Reset (repeat)
+00000200
+ABCD1010
+00010641
+00000000

@@ -1,0 +1,14 @@
+-- background_execution.mif — a Global executes during a Stay window
+-- external sub-opcode 1 = "external register write" (cross-Formation convention,
+-- Chapter 2 §2.7); the meaning is supplied by a Formation.
+DEPTH = 256;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+CONTENT BEGIN
+0 : 00000200;   -- Stay Set (open the window)
+1 : ABCD1010;   -- ext sub-op 1, sub_operand=0x10, data=0xABCD (background write)
+2 : 00010641;   -- Stay 100, timing_signals = 0x0001 (the hosting wait)
+3 : 00000000;   -- Reset (repeat)
+[4..FF] : 00000000;
+END;
