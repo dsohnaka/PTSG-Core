@@ -1,0 +1,15 @@
+-- prescaler_phase_measurement.mif — Hook A: free-running prescaler phase jitter probe
+-- REQUIRED core parameter for this measurement: PRESCALE = 5, and the program uses Stay 5.
+-- Purpose: drive S_WAIT entry repeatedly so SignalTap can capture presc_cnt phase at entry.
+DEPTH = 256;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+CONTENT BEGIN
+0 : 00010700;   -- NOP   timing_signals = 0x0001 (marker high)
+1 : 00010051;   -- Stay 5 (high held)
+2 : 00000700;   -- NOP   timing_signals = 0x0000 (marker low)
+3 : 00000051;   -- Stay 5 (low held)
+4 : 00000013;   -- Jump 1 (loop body 1..4 forever; state 0 init-only)
+[5..FF] : 00000000;
+END;
