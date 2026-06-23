@@ -63,6 +63,21 @@
 //      can be pipelined accordingly without changing the externally-visible
 //      contract (the 1-clock-per-opcode Convention C2-T4).
 // ============================================================================
+// REVISION HISTORY(RH)
+// 001 2026-06-14 22:06 Arch. Ohnaka  Add : This defines the execution of NOP as a Que command, background command, and foreground command.
+// 002 2026-06-14 22:06 Arch. Ohnaka  Add : Since the stay counter may have already started counting due to StaySet,
+//                                          in that case, if it's a prescaler tick, the stay counter needs to be incremented.
+// 003 2026-06-14 22:06 Arch. Ohnaka  Del : The stay counter may have already started counting in StaySet, so it should not be cleared here.
+// 004 2026-06-14 22:06 Arch. Ohnaka  Add : Since the stay counter may have already started counting due to StaySet, in that case,
+//                                          if it's a prescaler tick, the stay counter needs to be incremented.
+// 005 2026-06-15 21:07 Arch. Ohnaka  Add : When the Stay window is open, even if a global command is running,
+//                                          the Stay counter needs to be incremented when the prescaler expires.
+// 006 2026-06-15 21:07 Arch. Ohnaka  Add : This defines the execution of JUMP as a Que command, background command, and foreground command.
+// 007 2026-06-15 21:07 Arch. Ohnaka  Add : Opcode for Foreground commands can also be queued.
+// 008 2026-06-15 21:07 Arch. Ohnaka  Add : When queuing the JUMP command
+//
+//
+// ============================================================================
 
 module ptsg_core #(
     // ---- Geometry -----------------------------------------------------------
@@ -168,6 +183,7 @@ module ptsg_core #(
     // Single queued-operation slot (queued band, C3-T2 FIFO depth-1) ---------
     reg               queued_valid;
     reg [7:0]         queued_subop;
+    reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
     reg [CNT_W-1:0]   queued_target;
 
     // Stay-counter (13-bit internal: 0..4096) --------------------------------
@@ -291,7 +307,14 @@ module ptsg_core #(
     // execution advances past the Stay state.
     wire [ADDR_W-1:0] resume_addr =
         (queued_valid && (queued_subop == SUB_LOOP) &&
-         !loop_exits(loop_cnt, queued_target)) ? base_addr : (state_num + 1'b1);
+         !loop_exits(loop_cnt, queued_target)) ? base_addr :
+        // =============================================================================//
+        // REVISION HISTORY  008                                                        //
+        // 2026-06-15 21:07 Arch. Ohnaka  Add : When queuing the JUMP command           //
+        // =============================================================================//
+        (queued_valid && (queued_opcode == OP_JUMP)) ? queued_target :                  //
+        // =============================================================================//
+        (state_num + 1'b1);
 
     always @(posedge clk) begin
         if (rst) begin
@@ -447,8 +470,24 @@ module ptsg_core #(
                             end
                             default: begin
                                 // NOP (sub-op 7) and reserved 8-255: present tsig.
-                                timing_signals <= tsig;
-                                state_num      <= state_num + 1'b1;
+                                // =============================================================================//
+                                // REVISION HISTORY 001                                                         //
+                                // 2026-06-14 22:06 Arch. Ohnaka  Add :This defines the execution of NOP        //
+                                //      as a Que command, background command, and foreground command.           //
+                                // =============================================================================//
+                                if (prog_end_seen) begin                     // as Que command (after Prog End) //
+                                    fsm            <= S_WAIT;                                                   //
+                                end                                                                             //
+                                else if (window_open) begin       // as background command (inside Stay window) //  
+                                    state_num      <= state_num + 1'b1;                                         //
+                                end                                                                             //
+                                else begin                       // as foreground command (outside Stay window) //
+                                    timing_signals <= tsig;                                                     //
+                                    if (presc_tick) begin      // Advance only on prescaler tick (C4-T4 lean B) //
+                                        state_num      <= state_num + 1'b1;      // Advance to next instruction //
+                                    end                                                                         //
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             endcase
                         end else begin
@@ -456,15 +495,35 @@ module ptsg_core #(
                             // D16-D31 is operand data, so timing_signals is held.
                             state_num <= state_num + 1'b1;
                         end
+                        // =============================================================================//
+                        // REVISION HISTORY  005                                                        //
+                        // 2026-06-15 21:07 Arch. Ohnaka  Add : When the Stay window is open,           //
+                        //      even if a global command is running, the Stay counter needs             //
+                        //      to be incremented when the prescaler expires.                           //
+                        // =============================================================================//
+                        if ( window_open && presc_tick ) begin                                          //
+                            stay_cnt <= stay_cnt + 1'b1;                                                //
+                        end                                                                             //
+                        // =============================================================================//
                     end
                     // --------------------------------------------------------
                     //  Stay (opcode 1) — enter the wait
                     // --------------------------------------------------------
                     OP_STAY: begin
-                        stay_cnt       <= {(CNT_W+1){1'b0}};
+                        //stay_cnt       <= {(CNT_W+1){1'b0}};  // Del : The stay counter may have already started counting in StaySet, so it should not be cleared here. - RH 003 Arch. Ohnaka (2026-06-14 22:06)
                         stay_target    <= stay_dur;
                         timing_signals <= tsig;        // held value during wait (C3-T1 A)
                         fsm            <= S_WAIT;
+                        // =============================================================================//
+                        // REVISION HISTORY  004                                                        //
+                        // 2026-06-14  Arch. Ohnaka  Add : Since the stay counter may have              //
+                        //      already started counting due to StaySet, in that case,                  //
+                        //      if it's a prescaler tick, the stay counter needs to be incremented.     //
+                        // =============================================================================//
+                        if ( window_open && presc_tick ) begin                                          //
+                            stay_cnt <= stay_cnt + 1'b1;                                                //
+                        end                                                                             //
+                        // =============================================================================//
                     end
                     // --------------------------------------------------------
                     //  Branch (opcode 2) — conditional state transition
@@ -489,8 +548,27 @@ module ptsg_core #(
                     //  handled by need_indirect above)
                     // --------------------------------------------------------
                     OP_JUMP: begin
-                        timing_signals <= tsig;
-                        state_num      <= operand;     // absolute target
+                        // =============================================================================//
+                        // REVISION HISTORY  006                                                        //
+                        // 2026-06-15  Arch. Ohnaka  Add :This defines the execution of JUMP            //
+                        //      as a Que command, background command, and foreground command.           //
+                        // =============================================================================//
+                        if (in_queued_band) begin  // After Prog End inside Stay window: queue a Jump   // (immediate target).
+                            queued_valid  <= 1'b1;                                                      //
+                            queued_opcode <= OP_JUMP;                                                   //
+                            queued_target <= operand;                                                   //
+                            state_num     <= state_num + 1'b1;                                          //
+                        end                                                                             //    
+                        else if (window_open) begin  // Inside Stay window: treat as background command // (immediate target).
+                            state_num      <= operand;  // Advance to the target immediately,           // but do NOT present tsig (C3-T1 B). 
+                        end                                                                             //
+                        else begin  // Outside Stay window: treat as foreground command                 // (immediate target).
+                            timing_signals <= tsig;  // Present tsig immediately (C3-T1 A),             // but advance to the target only on the next prescaler tick (C4-T4 lean B).
+                            if (presc_tick) begin  // Advance to the target on the next prescaler tick  // (C4-T4 lean B)
+                                state_num      <= operand;     // absolute target                       //
+                            end                                                                         //   
+                        end                                                                             //
+                        // =============================================================================//                           
                     end
                     // --------------------------------------------------------
                     //  Reserved opcodes 4-F: treated as NOP (advance)
@@ -511,6 +589,7 @@ module ptsg_core #(
                     if (stay_cnt == (stay_target - 1'b1)) begin
                         // ---- Stay-timeup -----------------------------------
                         stay_cnt_match <= 1'b1;
+                        stay_cnt       <= {(CNT_W+1){1'b0}};  // Add : Clear stay counter and match flag; close the window. - RH 002 Arch. Ohnaka (2026-06-14 22:06)
                         window_open    <= 1'b0;
                         prog_end_seen  <= 1'b0;
                         queued_valid   <= 1'b0;
