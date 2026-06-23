@@ -1,0 +1,201 @@
+{
+  "metadata": {
+    "title": "PTSG State-0 NOP — The Triple Role: Foreground Execution, Isolation Container, and External Marker",
+    "title_ja": "PTSG state 0 の NOP — 三重役割：前景実行・隔離容器・外部標示マーカー",
+    "date": "2026-06-22",
+    "session_type": "single-AI verification dialogue (amanuensis / Layer 4)",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority for PTSG-Core",
+        "role_ja": "FPGAアーキテクト（40年以上）；PTSG-Core唯一の設計決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): drafting, consistency monitoring, white-box simulation; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：起草・整合性監視・白箱シミュレーション；決定権なし"
+      }
+    ],
+    "topic": "The dialogue in which the role of state 0's foreground NOP was recognized as threefold. At cold start the prescaler phase is indeterminate, so the very first state has indeterminate length. State 0's NOP (1) is always foreground-executed, (2) acts as an isolation container that absorbs the cold-start phase indeterminacy into a single disposable state, and (3) can emit a timing_signal to externally MARK that the region is the indeterminate one. The realization was post-hoc: in the prescaler-phase measurement (parent trace) the first ON measured 30 clk vs the steady 25 — the extra 5 was the cold-start absorption made visible. Resolved through an existing primitive (NOP) rather than a new init mechanism.",
+    "topic_ja": "state 0 の前景 NOP の役割が三重であると認識された対話。冷態起動時はプリスケーラ位相が不定ゆえ、最初の状態は長さが不定になる。state 0 の NOP は (1) 常に前景実行され、(2) 冷態の位相不定を単一の使い捨て状態に吸収する隔離容器として働き、(3) timing_signal を出してその領域が不定区間であることを外部標示できる。この認識は事後的だった: 位相測定（親トレース）で初回 ON が定常 25 に対し 30 clk で、余分の 5 が可視化された冷態吸収であった。新たな初期化機構でなく既存プリミティブ（NOP）で解決。",
+    "status": "Layer 4 verification-era trace (offspring 2 of 2 of the prescaler-phase-resolution parent trace) — the most principled and far-reaching of the three. / Layer 4検証期トレース（親「位相決着」の派生2/2）——三本中最も原理的で射程が広い。",
+    "status_ja": "Layer 4検証期トレース（親「位相決着」の派生2/2）——三本中最も原理的。",
+    "companion_traces": "Parent: 2026-06-22_ptsg-prescaler-phase-resolution (where the 30-vs-25 first-ON was measured). Sibling: 2026-06-22_ptsg-duty-idioms (the timing_signals external-marker gesture is shared). Evidence: the first-ON=30clk observation in the white-box and silicon observation.md. / 親:位相決着（初回ON 30対25を測定）。姉妹:デューティ4流儀（外部標示の仕草を共有）。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file plus the parent trace and ptsg_core.v (RH001-008) can reason about cold-start determinacy in any PTSG Formation and apply the isolation-container pattern to other indeterminate-length first states."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "What is the nature of the cold-start indeterminacy, and where does it live?",
+      "alternatives": [
+        {
+          "label": "A timing bug to fix",
+          "characterization": "the indeterminate-length first state is an error in reset or fetch sequencing"
+        },
+        {
+          "label": "An irreducible physical fact to be contained",
+          "characterization": "at cold start the free-running prescaler is at an arbitrary phase; the first state's length is genuinely indeterminate and cannot be made determinate without resetting the prescaler"
+        }
+      ],
+      "chosen": "An irreducible fact to be contained, not a bug to fix.",
+      "rationale": "Because the prescaler is free-running (parent trace: this is now a deliberate, confirmed property), its phase at the moment reset releases is not knowable in advance. The first state entered must therefore wait an indeterminate 1..PRESCALE clocks for the first tick. This is not a defect of sequencing — it is the cost of a free-running time-base. The design question is not 'how do we remove it' but 'where do we put it.' Measured quantity: first ON = 30 clk vs steady 25 clk; the extra 5 (one prescale period, worst-case) is exactly the cold-start absorption."
+    },
+    {
+      "id": "DP-2",
+      "point": "Where should the cold-start indeterminacy be absorbed?",
+      "alternatives": [
+        {
+          "label": "Smeared across normal operation",
+          "characterization": "let the first real Stay absorb it, contaminating the first useful timing"
+        },
+        {
+          "label": "Isolated into a dedicated first state (state 0)",
+          "characterization": "place a foreground NOP at state 0 whose whole purpose is to absorb the indeterminacy, so that from state 1 onward every Stay is clean"
+        }
+      ],
+      "chosen": "Isolated into state 0's foreground NOP. The first state is a disposable container for the indeterminacy.",
+      "rationale": "If the first real Stay absorbed the cold-start phase, that Stay's duration would be wrong by up to one prescale period on the first iteration — contaminating the first useful output. By spending a foreground NOP at state 0 first, the indeterminacy is consumed before any Stay runs; from state 1 the prescaler is phase-locked (parent trace) and every Stay is exact. Trade-off: one state and up to one prescale period of startup latency, paid once, in exchange for a clean time-base from the first real instruction. This is the isolation-container move: concentrate the uncertainty in one disposable place rather than letting it diffuse."
+    },
+    {
+      "id": "DP-3",
+      "point": "Why a NOP and not a Stay 1 for the isolation container?",
+      "alternatives": [
+        {
+          "label": "Stay 1",
+          "characterization": "use a one-unit Stay as the first disposable state"
+        },
+        {
+          "label": "Foreground NOP",
+          "characterization": "use a foreground NOP, which advances on the first prescale tick"
+        }
+      ],
+      "chosen": "Foreground NOP.",
+      "rationale": "A Stay is a deterministic-time primitive by definition: 'Stay N' must mean exactly N prescale units. If the very first Stay had indeterminate length (because it absorbs the cold-start phase), it would break the Stay invariant on its first instance — staining the banner of the one primitive whose entire meaning is determinacy. A foreground NOP carries no such promise: it simply advances on the next prescale tick, and its indeterminate first-instance length violates no contract. The NOP absorbs the uncertainty WITHOUT dirtying Stay's guarantee. (Architect's sushi metaphor: the oxidized trim is fine to use as staff meal / まかない, but you do not serve it as the headline cut.)"
+    },
+    {
+      "id": "DP-4",
+      "point": "Should the indeterminate region be hidden, or externally marked?",
+      "alternatives": [
+        {
+          "label": "Hidden",
+          "characterization": "emit no signal; the outside world cannot tell the first region is the indeterminate one"
+        },
+        {
+          "label": "Externally marked",
+          "characterization": "have state 0's NOP emit a timing_signal so external logic can recognize and, if needed, discard the indeterminate region"
+        }
+      ],
+      "chosen": "Externally marked (optional but recommended). State 0's NOP can raise a timing_signal that flags the indeterminate region.",
+      "rationale": "The indeterminacy cannot be removed, but it can be made legible. If state 0's NOP raises a marker bit, external logic (or a downstream Formation) can recognize 'this is the startup region' and gate or discard outputs during it, converting an invisible hazard into a handled signal. This is the THIRD role and the same gesture as idiom C's D17 boundary flag (sibling trace): when a cycle has special status, externalize that status to the timing_signals plane rather than hiding it. Trade-off: costs one timing_signals bit during state 0; free otherwise."
+    },
+    {
+      "id": "DP-5",
+      "point": "Is state 0 special-cased in hardware, or is it just an ordinary state used by convention?",
+      "alternatives": [
+        {
+          "label": "Hardware special-case",
+          "characterization": "add logic that treats address 0 specially at reset"
+        },
+        {
+          "label": "Ordinary state, special by convention only",
+          "characterization": "state 0 is just the reset entry address; its role as isolation container is a programming convention, not a hardware feature"
+        }
+      ],
+      "chosen": "Ordinary state, special only by convention. No hardware special-casing.",
+      "rationale": "Reset enters at address 0 (already true); nothing else about state 0 is privileged in silicon. Its triple role is achieved entirely by what the programmer writes there (a foreground NOP, optionally marker-tagged). This keeps the Core minimal — no init-mode opcode, no reset-vector logic beyond the entry address — consistent with 'complexity outward, core minimal' and the discipline of resolving requirements through existing primitives. The programmer remains free to use state 0 for real work IF they understand its indeterminate nature (the 'oxidized end' is usable, just not as deterministic Stay)."
+    },
+    {
+      "id": "DP-6",
+      "point": "Where to document the triple role in the layered repository (write-back recommendation; architect decides)",
+      "alternatives": [
+        {
+          "label": "A Chapter 2/3 convention note",
+          "characterization": "document state 0's role where the opcode/state semantics live"
+        },
+        {
+          "label": "A Chapter 4 note alongside the prescaler",
+          "characterization": "document it next to prescaler phase, since the indeterminacy is a prescaler consequence"
+        },
+        {
+          "label": "Both: a primary convention note cross-referenced from the prescaler chapter",
+          "characterization": "state the convention once, reference it from where the cause lives"
+        }
+      ],
+      "chosen": "Recommend a primary convention note (the 'oxidized end' / staff-meal convention) in the state-semantics chapter, cross-referenced from the prescaler-phase section. Final placement and wording are the architect's decision.",
+      "rationale": "The triple role is a state-semantics convention (what state 0 means and how to use it), so its home is with state semantics; but its CAUSE is the free-running prescaler, so the prescaler section should point to it. Documenting once and cross-referencing avoids duplication. Because this convention has wide reach (every Formation cold-starts), it deserves an explicit named convention rather than a buried remark. Left to the architect per amanuensis-never-decides."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "Indeterminacy contained, not eliminated",
+      "summary": "The governing idea: some uncertainty is physical and irreducible (the free-running prescaler's cold-start phase). Mature design does not pretend to remove it; it concentrates it into one disposable place and, ideally, labels it. State 0's NOP is the container. This is a general engineering stance — isolate the unavoidable so the rest stays clean — expressed in three instructions of silicon vocabulary."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Protecting the determinacy of Stay",
+      "summary": "Stay's entire value is that 'Stay N' means exactly N units. The cold-start indeterminacy threatens that promise on the first instance. Choosing a NOP (which promises nothing) over a Stay 1 (which promises everything) to hold the uncertainty is an act of protecting a primitive's contract. The cleanliness of Stay is purchased by giving the dirty job to the primitive that has no contract to dirty."
+    },
+    {
+      "theme_id": "T3",
+      "title": "Externalization to the timing_signals plane — a unifying gesture",
+      "summary": "The third role (marking the region) is the same move as idiom C's boundary flag (sibling trace): when a cycle is special, do not hide it — emit a timing_signal so external logic can recognize it. Across the three traces, the timing_signals plane is emerging as PTSG's channel for externalizing meaning that the time-axis cannot itself carry: boundaries, startup regions, taxes. The architecture pushes semantics outward onto observable signals."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Post-hoc recognition — the measurement revealed the role",
+      "summary": "The triple role was not designed up front; it was recognized after the first ON measured 30 clk against a steady 25. The extra 5 clk was the cold-start absorption made visible, and reading it backward revealed that state 0 had been doing this job all along. This is how Layer 4 feeds Layer 2: a measured anomaly that turns out to be correct behavior teaches a role the designer had implicitly relied on but not yet named."
+    },
+    {
+      "theme_id": "T5",
+      "title": "The staff-meal convention — usable, just not as the headline",
+      "summary": "The architect's framing: state 0 is the 'oxidized end' (酸化した端) — the trim that is not served as the prime cut but is perfectly fine boiled as staff meal (まかない). State 0 is not forbidden for real use; it is simply understood to have indeterminate first-instance length. A programmer who knows this can use it deliberately. The convention names a usable-but-caveated resource rather than a prohibited one — preserving freedom while warning honestly."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Quantify the worst-case cold-start latency per Formation",
+      "description": "First ON measured 30 vs steady 25 (one prescale period of absorption at PRESCALE=5). For a Formation with a different PRESCALE or a different state-0 program, the startup latency differs.",
+      "starting_question": "Derive the worst-case cold-start latency as a function of PRESCALE and the state-0 program, and state the exact bound a Formation designer should budget for before the first deterministic Stay."
+    },
+    {
+      "hook_id": "B",
+      "title": "The state-0 convention note (write-back)",
+      "description": "DP-6 recommends a named 'oxidized end / staff-meal' convention in the state-semantics chapter, cross-referenced from the prescaler section. Wording and placement are the architect's decision.",
+      "starting_question": "Draft the convention paragraph: state 0 is the reset-entry state; its first-instance length is indeterminate due to the free-running prescaler; the recommended use is a foreground NOP (optionally marker-tagged); it may be used for real work if its nature is understood. What is the minimal precise wording?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Generalize the isolation-container pattern",
+      "description": "State 0 is one instance of a general pattern: concentrate irreducible indeterminacy into a single disposable, optionally-labeled state. This may apply to other transitions (e.g. re-entry after an external interrupt, or band switches).",
+      "starting_question": "Are there other points in a PTSG program where indeterminacy enters (e.g. an externally-triggered re-entry, a Condition race) that would benefit from the same isolation-container + external-marker treatment? Enumerate candidates."
+    },
+    {
+      "hook_id": "D",
+      "title": "Interaction with idiom D (Stay-exact) at cold start",
+      "description": "Idiom D makes timing_signals reflect the Stay count exactly. But the FIRST iteration still pays the cold-start absorption in state 0. A test-vector Formation built on D must account for this.",
+      "starting_question": "For an exact-width generator built on idiom D, how should the state-0 cold-start region be handled so the first emitted vector is also exact — discard-via-marker, a warm-up loop, or a prescaler-aware trigger? Compare."
+    },
+    {
+      "hook_id": "E",
+      "title": "Does the marker bit belong to a reserved timing_signals lane?",
+      "description": "If marking the startup region becomes a convention, a reserved timing_signals bit (a 'status lane' distinct from data lanes) might be warranted, echoing idiom C's D17 flag lane.",
+      "starting_question": "Should PTSG conventions reserve a specific timing_signals bit as a 'status/marker lane' (startup region, boundary flags, taxes), or should marker-bit assignment stay per-Formation? Weigh portability against bit budget."
+    }
+  ],
+  "key_outputs_for_repository": [
+    "State 0's foreground NOP has a triple role: (1) foreground execution, (2) isolation container for cold-start prescaler-phase indeterminacy, (3) optional external marker via a timing_signal.",
+    "Cold-start indeterminacy is an irreducible consequence of the free-running prescaler, not a bug; it is contained, not eliminated. Measured: first ON = 30 clk vs steady 25 (one prescale period of absorption at PRESCALE=5).",
+    "Use a foreground NOP, not a Stay 1, as the container — to protect the determinacy guarantee of Stay on its first instance.",
+    "No hardware special-casing of state 0: reset enters at address 0; the triple role is a programming convention over existing primitives.",
+    "Layer 1 write-back: a named 'oxidized end / staff-meal (まかない)' convention in the state-semantics chapter, cross-referenced from the prescaler-phase section (wording = architect's decision).",
+    "Shared gesture with idiom C (sibling trace): externalize special-cycle status to the timing_signals plane rather than hiding it.",
+    "Pattern candidate: isolation container for irreducible indeterminacy (concentrate + optionally label)."
+  ],
+  "closing_note": "Every clock that runs freely pays a small tax at the first tick: nobody knows what phase the world will be in when the reset lets go. PTSG does not pretend to know. It spends one instruction — a NOP that promises nothing — to swallow the unknown first moment whole, so that from the second state onward the timing is exact and the Stay primitive keeps its word. And if you ask it to, that first instruction will raise a small flag over the uncertain ground, so the outside world need never mistake the staff meal for the headline cut. / 自由に走るクロックは初回ティックで小さな税を払う:リセットが手を離す時、世界がどの位相にあるか誰も知らない。PTSG は知ったふりをしない。何も約束しない命令——NOP——を一つ費やして未知の最初の瞬間を丸ごと飲み込み、二番目の状態からタイミングは正確になり、Stay プリミティブは約束を守る。そして望むなら、その最初の命令は不確かな地面に小さな旗を立てる——外界がまかないを看板の品と取り違えずに済むように。"
+}

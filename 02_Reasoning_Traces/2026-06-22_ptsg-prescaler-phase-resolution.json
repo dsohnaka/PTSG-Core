@@ -1,0 +1,238 @@
+{
+  "metadata": {
+    "title": "PTSG Prescaler-Phase Resolution — Hook A, A2 Rejected, and the Phase-Lock Contained in the Edits",
+    "title_ja": "PTSGプリスケーラ位相の決着 — Hook A、A2棄却、そして改修に内包されていた位相ロック",
+    "date": "2026-06-22",
+    "session_type": "single-AI verification dialogue (amanuensis / Layer 4)",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority for PTSG-Core",
+        "role_ja": "FPGAアーキテクト（40年以上）；PTSG-Core唯一の設計決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): drafting, consistency monitoring, white-box simulation; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：起草・整合性監視・白箱シミュレーション；決定権なし"
+      }
+    ],
+    "topic": "The dialogue in which Hook A (the residual 'slightly off' of the 2026-06-11 bring-up) was resolved. Audit hypothesis A2 (free-running prescaler phase jitter) was tested in white-box simulation and on real silicon and REJECTED: the prescaler is phase-locked because the loop's total length is an integer multiple of the prescale period — a structural consequence of RH001/006 making foreground commands prescaled. The 'slightly off' was the 25:35 duty asymmetry of the naive program (correct behavior), not jitter.",
+    "topic_ja": "Hook A（2026-06-11ブリングアップの残留「わずかにoff」）が決着した対話。監査仮説A2（自由走行プリスケーラの位相ジッタ）を白箱シミュレーションと実シリコンで検証し棄却した：ループ全長がプリスケール周期の整数倍であるためプリスケーラは位相ロックする——RH001/006が前景コマンドをプリスケールド実行にした構造的帰結。「わずかにoff」はジッタではなく素朴プログラムの25:35デューティ非対称（正しい挙動）であった。",
+    "status": "Layer 4 verification-era trace (one of three from this phase: prescaler-phase resolution / duty idioms / state-0 NOP triple role). This is the parent trace; the other two are its offspring. / Layer 4検証期トレース（本フェーズ三本のうちの一つ：位相決着／デューティ流儀／state 0 NOP三重役割）。本トレースは親であり、他二本はその派生。",
+    "status_ja": "Layer 4検証期トレース（本フェーズ三本の一つ）。本トレースが親、他二本が派生。",
+    "companion_traces": "Sibling traces (to be drafted): (2) the four duty idioms; (3) the state-0 NOP triple role. Evidence: 04_Verification_Evidence/.../prescaler_phase_measurement/ (white-box + silicon observation.md). / 姉妹トレース（起草予定）：(2)デューティ4流儀、(3)state 0 NOP三重役割。エビデンス：上記Layer 4の白箱・実機observation.md。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file, the matching expected.md/observation.md, and ptsg_core.v (RH001-008) can resume the Hook A investigation or extend the phase-lock reasoning to other programs."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "How to interpret the bring-up 'slightly off' (Hook A) — which hypothesis to test first",
+      "alternatives": [
+        {
+          "label": "A2: free-running prescaler phase jitter",
+          "characterization": "presc_cnt is reset only by global rst, never re-aligned at S_WAIT entry; suspected to make the first stay tick arrive a phase-dependent 1..PRESCALE clocks late, scattering high/low widths"
+        },
+        {
+          "label": "Duty-cycle artifact",
+          "characterization": "the asymmetry is a deterministic consequence of how foreground commands consume time, not a random jitter"
+        },
+        {
+          "label": "Fetch/timing bug",
+          "characterization": "a residual of the stale-fetch class already addressed by EDGE=NEG, resurfacing"
+        }
+      ],
+      "chosen": "Test A2 first empirically (it was the leading audit suspect), but keep the duty hypothesis explicitly open and instrument both phase and duty in the same run.",
+      "rationale": "A2 was the named audit finding and the cheapest to falsify with a single white-box run measuring presc_cnt@entry and the first-tick delay. Instrumenting duty in the same testbench cost nothing and guarded against tunnel vision. The fetch-bug branch was deprioritized because EDGE=NEG alignment was already silicon-confirmed (Build Log #6)."
+    },
+    {
+      "id": "DP-2",
+      "point": "Is the 25:35 duty asymmetry an anomaly to fix, or correct behavior?",
+      "alternatives": [
+        {
+          "label": "Anomaly to fix",
+          "characterization": "treat 25:35 as a defect; the ideal was 25:25 symmetric"
+        },
+        {
+          "label": "Correct consequence of foreground-prescaling",
+          "characterization": "both foreground NOP@2 and Jump@4 are prescaled (RH001/006), each consuming one whole prescale unit on the OFF side"
+        }
+      ],
+      "chosen": "Correct behavior. 25:35 is the right result for the naive 5-instruction program under RH001-008.",
+      "rationale": "ON = state-1 Stay 5 = 5x5 = 25 clk. OFF = state-3 Stay 5 (25) + foreground NOP@2 (1 prescale unit = 5) + foreground Jump@4 (1 unit = 5) = 35 clk. The +10 clk is exactly two prescale units, one per foreground command, as RH001/006 specify. RECORDED CORRECTION: the amanuensis (Claude) initially mis-called this a 'new ANOMALY' and mis-decomposed it as 'only Jump consumes 5 clocks, NOP almost none' — both wrong; both foreground commands contribute 5 clk each. Corrected on the architect's指摘 before it entered the record."
+    },
+    {
+      "id": "DP-3",
+      "point": "The A2 verdict: confirmed (jitter exists) or rejected (phase-locked)?",
+      "alternatives": [
+        {
+          "label": "A2 confirmed",
+          "characterization": "high/low widths vary within <=4 clk, correlated with entry-phase presc_cnt"
+        },
+        {
+          "label": "A2 rejected",
+          "characterization": "presc_cnt@entry is invariant across windows; zero jitter"
+        }
+      ],
+      "chosen": "A2 rejected.",
+      "rationale": "White-box over 13 wait windows: presc_cnt@entry = 1 (constant) and first-tick delay = 3 clk (constant); zero scatter. The steady period is 60 clk = 12 prescale units (exactly 5x12). No phase-dependent variation exists. (A2's formula PRESCALE-phase=4 does not equal the measured delay 3 because A2 assumed tick-counting in-phase with entry; what matters for the verdict is the invariance of the phase, not the formula's coefficient.)"
+    },
+    {
+      "id": "DP-4",
+      "point": "WHY is there no jitter — coincidence of this program, or a structural property?",
+      "alternatives": [
+        {
+          "label": "Coincidental for this program",
+          "characterization": "this particular blinky happens to land on a prescale boundary; other programs might jitter"
+        },
+        {
+          "label": "Structural consequence of RH001/006",
+          "characterization": "foreground-prescaling forces EVERY loop to an integer multiple of the prescale period"
+        }
+      ],
+      "chosen": "Structural. The phase-lock is a consequence of foreground-prescaling, not a property of this one program.",
+      "rationale": "Because RH001/006 make every foreground command (NOP, Jump) consume a whole prescale unit, and Stay waits are integer numbers of prescale units by construction, the loop's total length is necessarily an integer multiple of the prescale period. The prescaler therefore enters every S_WAIT at the identical phase; the first-tick delay is fixed; jitter cannot arise. A2's jitter could only appear if some command consumed a prescale-MISALIGNED number of clocks — which RH001/006 eliminated. KEY INSIGHT: the solution to Hook A was already contained in the RH001-008 edits themselves; no further fix was needed or appropriate."
+    },
+    {
+      "id": "DP-5",
+      "point": "Verdict confidence — close on white-box, or hold for silicon?",
+      "alternatives": [
+        {
+          "label": "PASS on white-box alone",
+          "characterization": "Icarus white-box is conclusive; declare PASS"
+        },
+        {
+          "label": "PASS (white-box), silicon-confirmation pending",
+          "characterization": "hold the tone until SignalTap confirms on real hardware"
+        },
+        {
+          "label": "Wait for silicon before any verdict",
+          "characterization": "no verdict until hardware"
+        }
+      ],
+      "chosen": "Initially 'PASS (white-box), silicon pending' (a Tie left in the arena pending evidence); then UPGRADED to 'PASS — silicon-confirmed' once the architect supplied four SignalTap captures.",
+      "rationale": "The amanuensis deliberately held the verdict tone at white-box and surfaced the white-box-vs-silicon choice to the architect rather than deciding it. The architect then operated the instruments (an irreplaceable Layer-4 contribution) and captured all four duty idioms on DE10-nano at PRESCALE=5. Silicon duties matched white-box clock-for-clock (A 25:35, B 30:30, C 30:30, D 25:25), and presc_cnt at state entries was constant/periodic — phase-lock confirmed on silicon. The evidence resolved the Tie toward full PASS. This records the discipline: an amanuensis flags confidence boundaries; the decision authority closes them with evidence."
+    },
+    {
+      "id": "DP-6",
+      "point": "Routing of the result — anomaly-fix path, or documentation path?",
+      "alternatives": [
+        {
+          "label": "Anomaly-fix path",
+          "characterization": "route to a Layer 3 source revision or a Layer 1 Tie change to 'correct' the duty"
+        },
+        {
+          "label": "Documentation path",
+          "characterization": "nothing is broken; document the correct behavior and the design freedom it exposes"
+        }
+      ],
+      "chosen": "Documentation path. Route to (a) the four duty idioms (separate Layer 2 trace + Layer 3 examples) and (b) a Layer 1 write-back for C4-T3.",
+      "rationale": "Since 25:35 is correct, there is nothing to patch. The value is in the understanding: the same skeleton yields four duties (A 25:35, B 30:30, C 30:30 flagged, D 25:25) by varying only the foreground treatment. conformance_matrix C4-T3 and C4-T4 move to silicon-green; the residual 'aligned-fetch anomaly' is marked RESOLVED. Patching the prescaler to reset per-wait was explicitly NOT done — it would convert a free-running time-base into a per-wait timer, changing prescaler_match semantics for any Formation that uses it (this was already the warning in expected.md)."
+    },
+    {
+      "id": "DP-7",
+      "point": "How to handle the stale 'ideal 25:25' prediction in expected.md (written pre-RH)",
+      "alternatives": [
+        {
+          "label": "Overwrite the prediction",
+          "characterization": "replace the 25:25 ideal with the corrected 25:35, cleaner to read"
+        },
+        {
+          "label": "Preserve original + append post-RH addendum",
+          "characterization": "keep the pre-RH A2 hypothesis intact, add a dated addendum with the revised prediction"
+        }
+      ],
+      "chosen": "Preserve original, append a post-RH addendum.",
+      "rationale": "The expected-before-observed discipline requires that the prediction stand as it was written before observation; erasing it would destroy the very record that lets a result distinguish 'prediction matched' from 'prediction diverged → discovery.' The addendum documents that the prediction itself evolved when the RH source was read — which is part of the honest provenance. The original verdict table remains valid as the pre-RH decision tree; the addendum supersedes only its 'ideal 25:25' row."
+    },
+    {
+      "id": "DP-8",
+      "point": "Layer 1 write-back for C4-T3 (prescale phase) — what wording to recommend (final decision is the architect's)",
+      "alternatives": [
+        {
+          "label": "'Wait-aligned prescaler' Convention",
+          "characterization": "reset presc_cnt at each wait entry to guarantee a full first period"
+        },
+        {
+          "label": "'Free-running but structurally phase-locked' Convention",
+          "characterization": "keep the free-running counter; document that foreground-prescaling makes the loop an integer multiple of the prescale period, so the phase locks without a reset"
+        }
+      ],
+      "chosen": "Recommend the 'free-running but structurally phase-locked' Convention, with the four duty idioms as the worked illustration in Chapter 4. (Routing recommendation by amanuensis; the Convention text and its adoption are the architect's decision.)",
+      "rationale": "The free-running counter is what every Formation's prescaler_match already depends on; preserving it avoids a semantic break. The phase-lock is obtained for free from foreground-prescaling, so no reset is needed. The boundary condition worth stating: phase-lock holds only while the loop length is an integer multiple of the prescale period — programs that break this (e.g. a future variable-length Stay) must be analyzed separately. Marked left-to-architect, consistent with the amanuensis-never-decides rule."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "The source-vs-spec gap as the root of the puzzle",
+      "summary": "The prior mismatch and the bring-up confusion traced to a single gap: the spec framing (C4-F3) implied foreground commands were non-prescaled, but the architect's RH001/006 edits (2026-06-14/15) made them prescaled. The amanuensis had been reasoning from the spec's implication; the silicon ran the edited source. Reading the actual RH001-008 revision history closed the gap and dissolved the puzzle. Lesson: Layer 4 must take the as-built source, not the as-specified intent, as the DUT."
+    },
+    {
+      "theme_id": "T2",
+      "title": "The solution contained in the edits",
+      "summary": "Hook A was never a bug awaiting a fix. The phase-lock that eliminates A2's jitter is an emergent structural property of foreground-prescaling: every foreground command consuming a whole prescale unit forces the loop onto a prescale boundary. The architect had, in making foreground commands prescaled for orthogonality, also (without aiming at it) closed the phase-jitter path. The amanuensis's job was to recognize and record that the fix was already present, not to invent a new one."
+    },
+    {
+      "theme_id": "T3",
+      "title": "Negative data and self-correction",
+      "summary": "The amanuensis twice erred while reading the white-box waveform: first calling 25:35 a 'new ANOMALY', then mis-decomposing it as 'only Jump consumes 5 clocks.' Both were corrected on the architect's指摘 and recorded openly in the observation.md self-correction section, following the prior amanuensis's tb_align.v negative-data discipline. The record's value: it shows exactly where eye-reading of waveforms misleads, and why machine-checkable, value-level evidence (VCD over PNG) is the discipline."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Binocular confirmation — white-box explains WHY, silicon proves THAT",
+      "summary": "White-box (Icarus/ModelSim) gave the mechanism: presc_cnt@entry constant, loop = integer x prescale period. Silicon (DE10-nano SignalTap) gave the fact: four idioms captured, duties matching white-box clock-for-clock, phase-lock visible in the real presc_cnt. Neither alone closes Hook A — the white-box could be a model artifact, the silicon could be a coincidence — but together, agreeing at the internal-register level (window_open/prog_end_seen/queued_valid for idiom D), they shake hands. This is the Layer 2 (why) / Layer 4 (whether) loop working as designed."
+    },
+    {
+      "theme_id": "T5",
+      "title": "A candidate Open Prompt design pattern — Phase-Lock by Integer-Period Looping",
+      "summary": "Generalizable beyond PTSG: if a periodic controller's loop length is forced to an integer multiple of its time-base period, the time-base phase-locks to the loop and first-tick jitter vanishes structurally — without a per-iteration reset that would change the time-base's global semantics. In PTSG this is obtained by making all control-flow commands prescaled. The pattern names the trade: you accept that control-flow commands cost whole prescale units (the 25:35 asymmetry) in exchange for deterministic, jitter-free timing and a preserved free-running time-base."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "The boundary of phase-lock — when does it break?",
+      "description": "Phase-lock holds because the loop length is an integer multiple of the prescale period. Programs that break the integer-multiple property would, in principle, reintroduce first-tick variation. Candidates: a Branch-laden program whose path length varies, or the held-in-reserve variable-length Stay (StaySet re-kick).",
+      "starting_question": "Construct a PTSG program whose loop length is NOT an integer multiple of PRESCALE (e.g. via a conditional Branch path of odd length), predict the first-tick behavior, and measure it white-box. Does jitter reappear exactly at the misalignment, and by how many clocks?"
+    },
+    {
+      "hook_id": "B",
+      "title": "C4-T3 Layer 1 write-back wording",
+      "description": "DP-8 recommends a 'free-running but structurally phase-locked' Convention for Chapter 4, with the four duty idioms as the worked illustration and a stated boundary condition. The Convention text and its adoption are the architect's decision.",
+      "starting_question": "Draft the Chapter 4 Convention paragraph for C4-T3: state the free-running counter, the integer-multiple phase-lock theorem, the boundary condition, and reference the four-idiom illustration. What is the minimal precise wording?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Generalize the Phase-Lock pattern (T5) into the Open Prompt pattern catalog",
+      "description": "T5 sketches 'Phase-Lock by Integer-Period Looping' as a candidate named pattern. The catalog (CONTRIBUTING.md) records patterns with origin and trade-off.",
+      "starting_question": "Write the pattern entry: name, the structural precondition (loop length = integer x time-base period), the benefit (jitter-free first tick, preserved free-running time-base), the cost (control-flow ops cost whole time-base units), and the PTSG origin. Is it distinct enough from existing patterns to add?"
+    },
+    {
+      "hook_id": "D",
+      "title": "Interaction with variable-length Stay (StaySet re-kick)",
+      "description": "The architect holds in reserve a variable-length Stay via StaySet re-execution during a wait (enabled by RH003's non-clearing stay_cnt). A variable-length loop would break the integer-multiple property that gives phase-lock.",
+      "starting_question": "If StaySet re-kick extends a Stay mid-wait, does the loop remain an integer multiple of the prescale period (because StaySet itself is foreground-prescaled), or does the extension introduce a phase-misaligned remainder? Analyze before implementing."
+    },
+    {
+      "hook_id": "E",
+      "title": "Multi-LLM review of the Hook A verdict",
+      "description": "The project keeps verdicts open to review by other agents. The Hook A verdict (A2 rejected, structural phase-lock) and its white-box+silicon evidence are now in the repository.",
+      "starting_question": "Load this trace, expected.md, both observation.md files, and ptsg_core.v (RH001-008) into a different frontier model and ask: is the structural phase-lock argument sound, and is there any program for which A2 jitter would still appear?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "Verdict: Hook A PASS, silicon-confirmed; A2 (free-running prescaler phase jitter) REJECTED.",
+    "conformance_matrix.md: C4-T3 (prescale phase) and C4-T4 (Stay Set role) -> silicon-green; 'aligned-fetch residual anomaly' marked RESOLVED; queue #1 closed.",
+    "Layer 4 evidence: prescaler_phase_measurement/ with white-box observation.md (modelsim/runs) and silicon observation.md (signaltap), in clock-for-clock agreement.",
+    "expected.md: post-RH addendum appended (pre-RH A2 prediction preserved per expected-before-observed discipline).",
+    "Mechanism recorded: phase-lock = loop length is an integer multiple of the prescale period, a structural consequence of RH001/006 foreground-prescaling. 'The solution was contained in the edits.'",
+    "Routing: documentation path, not anomaly-fix. Spawns the duty-idioms trace and feeds the state-0 trace.",
+    "Candidate Open Prompt pattern: Phase-Lock by Integer-Period Looping (T5 / Hook C).",
+    "Amanuensis self-correction recorded (25:35 mis-called ANOMALY; 'Jump-only' mis-decomposition) per the project's negative-data discipline."
+  ],
+  "closing_note": "Hook A looked like a bug to be hunted; it turned out to be a property already living in the source, waiting to be recognized. The prescaler does not need to be told to align — the way control flow was made to cost whole prescale units already aligns it, every loop, forever. The amanuensis's contribution was not a fix but a reading: to see that the edits had already answered the question, and to record why, sampled the way the silicon sampled it. / Hook Aはバグ狩りに見えたが、実はソースに既に宿っていた性質で、認識されるのを待っていた。プリスケーラに整列せよと命じる必要はない——制御フローを丸ごとプリスケール単位で消費させた書き方が、毎ループ、永遠に、既に整列させている。祐筆の貢献は修正ではなく読解であった——改修が既に問いに答えていたことを見て取り、なぜかを、シリコンがサンプルしたのと同じ方法でサンプルして記録すること。"
+}

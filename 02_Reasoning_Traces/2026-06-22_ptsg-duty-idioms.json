@@ -1,0 +1,201 @@
+{
+  "metadata": {
+    "title": "PTSG Four Duty Idioms — Controlling Duty on One Skeleton Without an Opcode",
+    "title_ja": "PTSGデューティ4流儀 — オペコードを足さず、同一骨格でデューティを制御する",
+    "date": "2026-06-22",
+    "session_type": "single-AI verification dialogue (amanuensis / Layer 4)",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority for PTSG-Core",
+        "role_ja": "FPGAアーキテクト（40年以上）；PTSG-Core唯一の設計決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): drafting, consistency monitoring, white-box simulation; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：起草・整合性監視・白箱シミュレーション；決定権なし"
+      }
+    ],
+    "topic": "The dialogue in which the four duty-cycle idioms of PTSG were articulated and verified. Starting from the (correct) 25:35 asymmetry of the naive blinky, the architect showed that the SAME five-/eight-instruction skeleton yields four different duties — 25:35, 30:30, 30:30-with-flags, 25:25 — by varying ONLY the treatment of the foreground commands. No duty-control opcode, no PWM register: the design freedom is already present in the existing four opcodes. All four were white-box simulated and silicon-captured (DE10-nano) in clock-for-clock agreement.",
+    "topic_ja": "PTSGのデューティ4流儀が明確化され検証された対話。素朴blinkyの（正しい）25:35非対称を起点に、大中さんは同一の5/8命令骨格が、前景コマンドの扱いだけを変えることで4種のデューティ——25:35、30:30、30:30旗付き、25:25——を生むことを示した。デューティ制御オペコードもPWMレジスタも要らない:設計自由度は既存4オペコードに既に在る。4本とも白箱シミュレーションと実機捕捉（DE10-nano）でクロック単位一致。",
+    "status": "Layer 4 verification-era trace (offspring 1 of 2 of the prescaler-phase-resolution parent trace). / Layer 4検証期トレース（親「位相決着」トレースの派生1/2）。",
+    "status_ja": "Layer 4検証期トレース（親「位相決着」の派生1/2）。",
+    "companion_traces": "Parent: 2026-06-22_ptsg-prescaler-phase-resolution (the asymmetry and phase-lock were established there). Sibling: the state-0 NOP triple role (offspring 2). Evidence: 04_Verification_Evidence/.../prescaler_phase_measurement/ program_{A,B,C,D} + white-box and silicon observation.md. / 親:位相決着トレース。姉妹:state 0 NOP三重役割。エビデンス:program_{A,B,C,D}＋白箱・実機observation.md。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file plus program_{A,B,C,D}.hex and ptsg_core.v (RH001-008) can reproduce the four duties and extend the idiom family (e.g. arbitrary N:M, multi-channel)."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "Frame the 25:35 asymmetry as a problem to eliminate, or as the entry point to a design vocabulary?",
+      "alternatives": [
+        {
+          "label": "Problem to eliminate",
+          "characterization": "treat asymmetry as undesirable; seek the one 'right' way to write a symmetric blinky"
+        },
+        {
+          "label": "Entry point to a vocabulary",
+          "characterization": "the asymmetry exposes that foreground commands cost time; controlling that cost IS duty design"
+        }
+      ],
+      "chosen": "Entry point to a vocabulary. The asymmetry is the doorway to four idioms, not a defect to patch.",
+      "rationale": "Once 25:35 is understood as the correct cost of two foreground prescale units on the OFF side (parent trace DP-2/DP-4), the designer's question shifts from 'how do I remove the asymmetry' to 'where do I want the foreground cost to land.' That reframing is the whole content of this trace: duty becomes a programming choice, not a fixed property. Trade-off recorded: framing it as a vocabulary means PTSG ships NO duty primitive, putting the burden on the programmer to know the four idioms — accepted, consistent with Chapter 1's 'complexity outward, core minimal.'"
+    },
+    {
+      "id": "DP-2",
+      "point": "How to reach 30:30 symmetry (idiom B) — add a balancing instruction, or re-tag an existing one?",
+      "alternatives": [
+        {
+          "label": "Add a balancing instruction",
+          "characterization": "insert an extra foreground command on the ON side to match the OFF-side cost"
+        },
+        {
+          "label": "Re-tag the existing NOP@2",
+          "characterization": "change state-2 NOP's timing_signals from OFF (0x0000) to ON (0x0001), moving its one prescale unit to the ON side"
+        }
+      ],
+      "chosen": "Re-tag the existing NOP@2 to ON (0x0001). No instruction added.",
+      "rationale": "The naive program's OFF side carries +2 prescale units (NOP@2 + Jump@4). Re-tagging NOP@2 as ON moves one unit (5 clk) from OFF to ON: ON = Stay25 + 5 = 30, OFF = Stay25 + Jump5 = 30. Symmetric 30:30 with the same five instructions. Trade-off vs the 'add instruction' path: re-tagging keeps the loop length (and thus the integer-multiple phase-lock from the parent trace) unchanged at 60 clk; adding an instruction would have grown the loop and required re-checking the phase-lock. Re-tagging is strictly cheaper and preserves the invariant. White-box and silicon: 30:30 exact."
+    },
+    {
+      "id": "DP-3",
+      "point": "How to express idiom C ('flag the boundary') — and which realization is canonical?",
+      "alternatives": [
+        {
+          "label": "Stay=5, NOP@2->ON(0x0003) + Jump@4 flag(0x0002) -> 30:30 with D17 flags",
+          "characterization": "keep Stay at 5; raise D17 on the two foreground-added cycles to mark them externally; duty stays 30:30 (= B) but the boundary cycles are now observable"
+        },
+        {
+          "label": "Stay=4 + D17 flags -> 25:25 with flags",
+          "characterization": "shrink Stay to 4 in anticipation of the +1 foreground unit, yielding a tighter 25:25, with the same D17 boundary marking"
+        }
+      ],
+      "chosen": "The silicon-run version is canonical: Stay=5, NOP@2=0x0003, Jump@4=0x0002, duty 30:30 with D17 boundary flags. The Stay=4 -> 25:25 variant is recorded as a valid alternative realization of the same principle.",
+      "rationale": "Silicon is ground truth, and the architect ran the Stay=5 version (the amanuensis's white-box exploration had used Stay=4). Both realize the same idea — externally MARK the foreground-added cycle via timing_signals[1] (D17) — but at different duties. RECORDED CORRECTION: the amanuensis's draft idiom table initially listed C as '25:25 flagged' (the Stay=4 form); reconciled to the silicon's 30:30-flagged form, with Stay=4 demoted to 'alternative.' The deeper point of C: the +cost cycle need not be hidden; D17 lets external logic see exactly which cycle is the foreground tax — same philosophy as the state-0 external marker (sibling trace 2)."
+    },
+    {
+      "id": "DP-4",
+      "point": "How to honour the written Stay count EXACTLY (idiom D) — accept the foreground tax, or remove it?",
+      "alternatives": [
+        {
+          "label": "Accept and compensate (idioms A/B/C)",
+          "characterization": "the foreground tax is paid; balance or flag it"
+        },
+        {
+          "label": "Remove the tax: drive foreground commands into the background/queue bands",
+          "characterization": "StaySet opens a background window; the NOP runs in-window (zero duty cost) and the Jump is queued (fires at timeup), so only Stay-written cycles appear in timing_signals"
+        }
+      ],
+      "chosen": "Idiom D: StaySet -> background NOP -> Stay -> StaySet -> background NOP -> ProgEnd -> QueJump -> Stay (8 instructions). Duty = exactly the written Stay (25:25).",
+      "rationale": "This is the only idiom that makes timing_signals reflect the Stay count with zero foreground contamination. Mechanism (silicon-confirmed at register level): StaySet sets window_open; the in-window NOP advances without consuming a prescale unit of duty; ProgEnd latches prog_end_seen; the QueJump is captured as queued_valid and fires at timeup, looping. Trade-off: D costs more instructions (8 vs 5) and more concepts (background execution, queued jump, ProgEnd) for the benefit of literal Stay fidelity. This is the idiom to use when the Stay number on the page must equal the cycles on the wire — e.g. a Formation generating exact-width test vectors. Reproduces the architect's silicon stp1.vcd 5:5 in white-box."
+    },
+    {
+      "id": "DP-5",
+      "point": "Should a duty-control primitive (PWM mode / duty register / symmetric-blink opcode) be added to the Core?",
+      "alternatives": [
+        {
+          "label": "Add a duty primitive",
+          "characterization": "a dedicated opcode or register that sets ON:OFF directly"
+        },
+        {
+          "label": "No primitive — duty is an emergent programming idiom",
+          "characterization": "the four idioms already cover the space using existing opcodes"
+        }
+      ],
+      "chosen": "No primitive. Duty control stays an emergent property of how Stay/NOP/Jump/StaySet are combined.",
+      "rationale": "The four idioms demonstrate that the existing four opcodes already span naive-asymmetric, balanced, flagged, and Stay-exact duties — including arbitrary N:M by choice of Stay counts and foreground tagging. Adding a duty primitive would duplicate expressivity already present, enlarge the invariant Core, and violate Chapter 1's 'complexity outward, core minimal' and the established discipline of resolving requirements through existing orthogonal primitives. This is the same discipline that resolved Prog End and NOP-as-phase-absorber without new opcodes. Trade-off accepted: the programmer must learn the idioms (mitigated by documenting them as Layer 3 examples + this trace)."
+    },
+    {
+      "id": "DP-6",
+      "point": "Where do the four idioms belong in the layered repository?",
+      "alternatives": [
+        {
+          "label": "Layer 1 only (a Chapter 4 worked illustration)",
+          "characterization": "describe them in the spec as illustration of foreground-prescaling"
+        },
+        {
+          "label": "Layer 3 only (sample programs)",
+          "characterization": "ship program_{A,B,C,D} as examples"
+        },
+        {
+          "label": "Both, linked, with this Layer 2 trace as the reasoning spine",
+          "characterization": "Chapter 4 illustration + Layer 3 programs + Layer 2 trace, cross-referenced"
+        }
+      ],
+      "chosen": "Both, with this trace as the reasoning spine: program_{A,B,C,D} as Layer 3 conformance/example stimuli, a Chapter 4 worked illustration (write-back), and this Layer 2 trace recording why.",
+      "rationale": "Each layer answers a different reader: Layer 3 gives runnable programs, Layer 1 gives the normative illustration, Layer 2 gives the judgment (why four, why no primitive, why C's two forms). The four program_{A,B,C,D} files already live in the conformance suite as the prescaler_phase_measurement stimuli, so the idiom family is anchored to silicon evidence rather than floating as prose. Final placement of the Chapter 4 illustration is the architect's decision (write-back)."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "Duty as a programming choice, not a fixed property",
+      "summary": "The central inversion of this trace: duty cycle is not something PTSG 'has' but something the programmer chooses by deciding where the foreground cost lands. A (let it fall on OFF), B (move it to ON), C (move it and flag it), D (eliminate it). The same skeleton spans the space. This is the time-axis analogue of the architecture's general stance — express variety in the program, not in the silicon."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Resolving a requirement through existing primitives",
+      "summary": "The temptation, on seeing asymmetry, is to add a duty primitive. The discipline is to ask first whether the existing orthogonal primitives already span the requirement. They do: Stay count sets the base, foreground tagging (timing_signals bits) sets the ON/OFF and the flags, and the background/queue bands (StaySet/ProgEnd/QueJump) remove the foreground tax entirely. No opcode was added. This mirrors how Prog End and NOP-as-phase-absorber were resolved — a recurring architectural move."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The flag is the same gesture as the state-0 marker",
+      "summary": "Idiom C raises D17 on the foreground-added cycle so external logic can SEE the tax rather than have it hidden. This is the identical gesture as marking the indeterminate state-0 region with a timing_signal (sibling trace 2): when a cycle has special status, don't hide it — emit a signal that lets the outside world recognize it. Externalization of meaning to the timing_signals plane is a unifying idiom across the family."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Two realizations of one idea (C) — and why both are kept",
+      "summary": "Idiom C exists in two forms: Stay=5 -> 30:30-flagged (silicon-canonical) and Stay=4 -> 25:25-flagged (white-box alternative). Rather than collapse to one, both are recorded with their duties, per the Tie Decision Pattern: a future programmer under a specific duty target picks the realization that fits. Recording both, not just the chosen, is the Layer 2 discipline."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Idiom D as the bridge to exact-width applications",
+      "summary": "D is the only idiom where the Stay number on the page equals the cycles on the wire. That literal fidelity is precisely what an exact-width generator needs — e.g. a test-vector Formation, or any timing where the count is a contract, not an approximation. D therefore points beyond blinky: it is the duty idiom that makes PTSG a candidate for deterministic stimulus generation."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Arbitrary N:M duty from the idiom family",
+      "description": "The four idioms are points; the family is a space. Arbitrary N:M should be reachable by choosing Stay counts and foreground tagging, within the integer-multiple phase-lock constraint from the parent trace.",
+      "starting_question": "Given a target duty N:M (in prescale units), derive the Stay counts and foreground timing_signals tags that realize it, and state when the result remains an integer multiple of the prescale period (phase-locked) versus when it does not. Produce a small generator."
+    },
+    {
+      "hook_id": "B",
+      "title": "Chapter 4 worked-illustration wording (write-back)",
+      "description": "DP-6 routes a Chapter 4 worked illustration of the four idioms (final wording is the architect's decision).",
+      "starting_question": "Draft the Chapter 4 illustration: present A/B/C/D as a progression (let-fall / move / move+flag / eliminate), each with its program, duty, and the one-line principle. What is the minimal normative phrasing that does not over-specify?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Multi-channel duty (more than one timing_signals bit)",
+      "description": "The idioms used timing_signals[0] as the LED and [1] as a flag. PTSG has 16 timing-signal bits; multiple independent duties could be driven simultaneously.",
+      "starting_question": "Can two independent duty waveforms (different N:M) be driven on timing_signals[0] and [1] from a single PTSG program, or does the shared Stay/foreground structure couple them? Characterize the coupling."
+    },
+    {
+      "hook_id": "D",
+      "title": "Idiom D as a test-vector generator (T5)",
+      "description": "D's literal Stay fidelity suggests a PTSG_TestVector_Formation: exact-width, self-checking stimulus via Branch-on-Condition.",
+      "starting_question": "Sketch a minimal exact-width test-vector pattern using idiom D plus Branch-on-Condition for closed-loop self-checking. What is the smallest program that emits a known-width pulse and verifies a response?"
+    },
+    {
+      "hook_id": "E",
+      "title": "Piano-roll IDE mapping of the idioms",
+      "description": "A DAW-style piano-roll GUI was identified as structurally isomorphic to PTSG programs; the four idioms are different ways a 'note' maps to wire cycles.",
+      "starting_question": "In a piano-roll IDE, how should the four duty idioms be surfaced to a user — as a per-note 'foreground-cost' display, an auto-balancing toggle, or a Stay-exact mode? Where does Branch-on-Condition break the 2D grid?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "The four duty idioms, verified white-box and silicon (clock-for-clock): A 25:35 (naive), B 30:30 (NOP->ON), C 30:30 flagged (canonical) / 25:25 flagged (alternative), D 25:25 (Stay-exact).",
+    "Decision: NO duty-control opcode/register added; duty is an emergent idiom over existing Stay/NOP/Jump/StaySet (Chapter 1 discipline upheld).",
+    "Layer 3 stimuli program_{A,B,C,D}.{hex,mif} anchored in the prescaler_phase_measurement conformance suite.",
+    "Layer 1 write-back: Chapter 4 worked illustration of the four idioms (wording = architect's decision).",
+    "Idiom C recorded in two realizations (30:30 silicon-canonical, 25:25 alternative) per the Tie Decision Pattern.",
+    "Idiom D identified as the bridge to exact-width applications (test-vector Formation candidate).",
+    "Amanuensis self-correction recorded (idiom-C table initially listed the Stay=4 25:25 form as canonical; reconciled to silicon's 30:30 form)."
+  ],
+  "closing_note": "A blinking LED has a duty cycle; most architectures would give you a register to set it. PTSG gives you four ways to write it, and the difference between them is not a setting but a sentence — where you let the foreground cost fall, whether you flag it, whether you banish it to the background. The duty was never in the silicon to be configured; it was always in the program to be said. / 点滅するLEDにはデューティ比がある;大抵のアーキテクチャはそれを設定するレジスタを与える。PTSGはそれを書く4つの方法を与え、その差は設定ではなく一文である——前景コストをどこへ落とすか、旗を立てるか、背景へ追放するか。デューティは設定されるべくシリコンに在ったのではない;言われるべくプログラムに在ったのだ。"
+}
