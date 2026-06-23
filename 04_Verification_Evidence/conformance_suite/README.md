@@ -31,7 +31,7 @@ The matching evidence (VCD + `observation.md`) lives under `../modelsim/runs/` o
 
 | Directory | Target (Layer 1) | Source | Status |
 |---|---|---|---|
-| `prescaler_phase_measurement/` | C4-T3 phase / C4-F1 | Hook A (2026-06-11) | program + expected ready; awaiting run |
+| `prescaler_phase_measurement/` | C4-T3 phase / C4-F1 / C4-T4 | Hook A (2026-06-11) | ✅ **PASS, silicon-confirmed (A2 rejected)** — white-box + 4-idiom silicon; see the two `observation.md` |
 | `match_flag_assertions/` | C3-F18, C4-F2 | Audit hole #4 | planned |
 | `nested_call_two_levels/` | C5-F2, external-stack path | Audit hole #2 | planned |
 | `prog_end_queued_band/` | C3-F2/F3/F4, C3-F19 | Audit hole #1 | planned |
@@ -62,3 +62,14 @@ operand for internal Globals).
 | Global internal subop S | `(D16_31<<16) \| (S<<8) \| 0` | S: 0=Reset 1=BaseSet 2=StaySet 3=Return 4=Call 5=Loop 6=ProgEnd 7=NOP |
 
 See Layer 1 Chapters 2–4 for full semantics. / 完全な意味論は Layer 1 第2-4章を参照。
+
+## Worked exemplar / 実例
+
+`prescaler_phase_measurement/` is the first completed item and the template the others copy: it
+carries `program_{A,B,C,D}.{hex,mif}` (four duty idioms), a per-item `README.md`, the revised
+`expected.md` (pre-RH A2 hypothesis + post-RH addendum), and matching white-box and silicon
+evidence. See its `README.md` for the full layout.
+
+`prescaler_phase_measurement/` は最初に完了した項目であり、他項目が踏襲する雛形:
+`program_{A,B,C,D}.{hex,mif}`（4流儀）、項目別 `README.md`、改訂 `expected.md`（RH改修前A2 + RH改修後追補）、
+白箱・実機の両証拠を備える。全体構成は同項目の `README.md` を参照。

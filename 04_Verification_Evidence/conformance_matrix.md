@@ -7,7 +7,7 @@
 > Layer 4 の玄関口。すべての Layer 1 決定(Fixed / Convention / Tie)をその検証状態に対応づける。
 > 本表は**何が検証済みか**と**何が未検証か**の両方を一目で可視にする。
 
-**Last updated / 最終更新:** 2026-06-12 (Layer 4 opened) / (Layer 4 開設)
+**Last updated / 最終更新:** 2026-06-22 (Hook A closed — prescaler phase, silicon-confirmed) / (Hook A 完了 — プリスケーラ位相、実機確認済み)
 
 ## Legend / 凡例
 
@@ -37,12 +37,14 @@ top to bottom; #1 first to establish silicon trust, #2 as a quick win to settle 
 
 | # | Target | Source | Primary tool | conformance_suite entry |
 |---|---|---|---|---|
-| 1 | Prescaler phase jitter / プリスケーラ位相ジッタ | Hook A (2026-06-11) | SignalTap | `prescaler_phase_measurement/` |
+| ~~1~~ ✅ | Prescaler phase jitter / プリスケーラ位相ジッタ | Hook A (2026-06-11) | SignalTap | `prescaler_phase_measurement/` — **PASS, silicon-confirmed (A2 rejected)** |
 | 2 | Match flags (loop/stay/prescaler) / 一致フラグ | Audit hole #4 | ModelSim | `match_flag_assertions/` *(planned)* |
 | 3 | External-stack two-level nesting / 外部スタック二段ネスト | Audit hole #2 | ModelSim | `nested_call_two_levels/` *(planned)* |
 | 4 | Prog End queued band / Prog End キュー帯域 | Audit hole #1 | both | `prog_end_queued_band/` *(planned)* |
 | 5 | Base Set idempotency / Base Set 冪等性 | Build Log #5 (CC self-flag) | both | `base_set_idempotency_probe/` *(planned)* |
 | 6 | Insertion mechanism / 挿入機構 | Audit hole #3 | ModelSim | `insertion_during_long_stay/` *(planned)* |
+
+**Completed / 完了:** #1 `prescaler_phase_measurement` — PASS, silicon-confirmed (2026-06-22); white-box + 4-idiom silicon captures agree clock-for-clock. / 白箱と4流儀実機がクロック単位で一致。
 
 ---
 
@@ -82,8 +84,8 @@ top to bottom; #1 first to establish silicon trust, #2 as a quick win to settle 
 | C4-F5 | Indirect Jump (operand 0) | 🟡 sim | indirect-Jump TB (Build Log #5) |
 | C4-F6 | Indirect Loop target (D16–D31=0) | ⬜ | (note: queued-band indirect not supported — see ptsg_imem/audit) |
 | C4-T2 | Prescaler config (compile-time fixed chosen) | 🟢 silicon | PRESCALE param fixed at synthesis, working |
-| C4-T3 | Prescale edge / phase | 🔴 anomaly | **Hook A**: free-running phase jitter suspected → #1 |
-| C4-T4 | Stay Set role (clear/sync-only, lean B) | 🟡 sim | implemented as lean B in RTL; silicon alignment OK, jitter dimension → #1 |
+| C4-T3 | Prescale edge / phase | 🟢 silicon | **Hook A PASS (A2 rejected)**: loop length = integer × prescale period ⇒ phase-locked, zero jitter; the lock is a structural consequence of RH001/006 (foreground prescaled). See `signaltap/DE10-nano/2026-06-22_prescaler_phase_measurement/observation.md` |
+| C4-T4 | Stay Set role (clear/sync-only, lean B) | 🟢 silicon | lean B in RTL; alignment AND phase-lock confirmed on silicon across 4 duty idioms (`prescaler_phase_measurement`) |
 
 ## Chapter 5 — External Logic Interface / 外部ロジックインターフェース
 
@@ -104,7 +106,7 @@ top to bottom; #1 first to establish silicon trust, #2 as a quick win to settle 
 |---|---|---|---|
 | Queued band implements Loop only (C3-F2 partial) | Audit 2026-06-02 | confirmed in source | → #4 to characterize on silicon; then Layer 1 decision: complete impl vs formalize the simplification |
 | Base Set auto-save idempotency undefined (C3-F11) | Build Log #5 | spec ambiguity | → #5; candidate for Ch3 v1.2 |
-| Aligned-fetch residual anomaly (prescaler phase) | Build Log #6 | under measurement | → #1 (Hook A); candidate for C4-T3 phase resolution |
+| ~~Aligned-fetch residual anomaly (prescaler phase)~~ **RESOLVED** | Build Log #6 | **PASS, silicon-confirmed (2026-06-22)** | not jitter — it was the 25:35 duty asymmetry of the naive program (foreground-prescaled NOP+Jump). Phase is locked. C4-T3 resolved. |
 
 ---
 
@@ -115,6 +117,6 @@ Verification outcomes that should feed back into the specification:
 検証結果のうち仕様書に書き戻すべきもの:
 
 - **Memory timing model** (RD_LAT≥1; EDGE="NEG" half-cycle alignment as current Convention with its frequency ceiling; EDGE="POS"+fetch-stage high-clock alternative) → **C2-T4 and Chapter 5 §5.13**. *(Silicon-confirmed; ready to draft.)*
-- **Prescaler phase** (free-running vs wait-aligned) → **C4-T3 phase dimension**, pending #1.
+- **Prescaler phase** → **C4-T3 RESOLVED (silicon-confirmed):** free-running counter, but the loop phase-locks because foreground-prescaling makes the loop an integer multiple of the prescale period. Document as Convention in Ch4, with the four duty idioms as the worked illustration. *(Ready to draft.)*
 - **Base Set idempotency** (A/B/C alternatives) → **C3-F11 / Chapter 3 v1.2**, pending #5.
 - **Queued-band scope** (Loop-only vs all internal ops) → **C3-F2 / Chapter 3 v1.2**, pending #4.

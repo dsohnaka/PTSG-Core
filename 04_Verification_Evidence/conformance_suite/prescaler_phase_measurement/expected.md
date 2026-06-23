@@ -135,3 +135,92 @@ than acted on unilaterally.
   / ModelSim でも見える(白箱、正確な `presc_cnt`)、かつ安価な初見;SignalTap が実機で確認。
 - Remember to export the SignalTap capture to **VCD** (File → Export → VCD), not just a PNG.
   / SignalTap キャプチャは **VCD** にエクスポート(File → Export → VCD)、PNG だけにしない。
+
+---
+
+## Addendum (2026-06-21) — post-RH prediction / 追補 — RH 改修後の予測
+
+> **Why this addendum exists.** The "Ideal prediction" and "A2 hypothesis" above were written
+> *before* the source revision history RH001–RH008 (2026-06-14/15) was read. Those edits made
+> **foreground commands prescaled** (RH001/006) and made the stay counter carry continuously
+> from StaySet (RH002/003/004/005). The original 25:25-symmetric ideal and the framing of A2
+> predate that change. Per the expected-before-observed discipline, the original text is kept
+> intact above; this addendum records the corrected prediction that was then tested.
+>
+> **本追補の理由。** 上の「理想予測」と「A2 仮説」は、ソース改訂履歴 RH001–RH008（2026-06-14/15）を
+> 読む*前*に書かれた。RH001/006 は**前景コマンドをプリスケールド実行**にし、RH002/003/004/005 は
+> StaySet からステイカウンタを連続させた。元の 25:25 対称の理想と A2 の枠組みはその改修より前の
+> もの。観察前予測の規律に従い、上の原文はそのまま残し、本追補に「その後に検証された訂正後の予測」を記録する。
+
+### Revised prediction / 訂正後の予測
+
+With foreground prescaling, **both** the foreground NOP (state 2) and Jump (state 4) each
+consume one whole prescale unit. The naive program's steady period is therefore not 50 clk
+(25:25) but **60 clk = 12 prescale units**, asymmetric **25:35**:
+
+前景プリスケールド化により、前景 NOP（state 2）と Jump（state 4）が**双方とも**丸ごと 1 プリスケール
+単位を消費する。ゆえに素朴プログラムの定常周期は 50 clk（25:25）ではなく **60 clk = 12 プリスケール
+単位**、非対称の **25:35** となる:
+
+```
+high (state 1 Stay 5)                         = 5 × 5 = 25 clk
+low  (state 3 Stay 5  +  NOP@2  +  Jump@4)     = 25 + 5 + 5 = 35 clk
+period = 60 clk = 12 × PRESCALE   (integer multiple)
+```
+
+**This 25:35 is the CORRECT result, not an anomaly.** The +10 clk on the low side is the
+foreground commands executing as prescaled commands — exactly as RH001/006 specify.
+
+**この 25:35 は正しい結果であり、異常ではない。** low 側の +10 clk は前景コマンドがプリスケールド
+コマンドとして実行された分で、RH001/006 の規定どおり。
+
+### Effect on A2 (the key revision) / A2 への影響（核心の訂正）
+
+Because the loop length is now an **integer multiple of the prescale period** (a structural
+consequence of every foreground command being prescaled), the prescaler enters every
+`S_WAIT` at the **same phase**. The phase-dependent first-tick jitter that A2 feared
+therefore **cannot occur**: it would require a command consuming a prescale-misaligned
+number of clocks, which RH001/006 eliminated. **Revised prediction: PASS — `presc_cnt`@entry
+constant across all windows, zero jitter.**
+
+ループ長が**プリスケール周期の整数倍**（全前景コマンドがプリスケールド化された構造的帰結）になった
+ため、プリスケーラは毎回**同一位相**で `S_WAIT` に突入する。ゆえに A2 が恐れた位相依存の初回ティック・
+ジッタは**起こり得ない**——それにはプリスケール非整合なクロックを消費するコマンドが必要だが、RH001/006 が
+それを消した。**訂正後の予測: PASS——全ウィンドウで `presc_cnt`@entry 一定、ジッタゼロ。**
+
+The bring-up "slightly off" of Hook A is therefore predicted to be **not jitter but the
+25:35 duty asymmetry** (the foreground-prescaled contribution), plus the one-time longer
+first ON caused by state 0's NOP absorbing the cold-start phase indeterminacy.
+
+ゆえに Hook A の bring-up「わずかに off」は、**ジッタではなく 25:35 のデューティ非対称**（前景プリス
+ケールド寄与）と、state 0 の NOP が冷態位相不定を吸収することによる初回 ON の一度きりの伸びである、と予測する。
+
+### The four duty idioms (predicted) / デューティ4流儀（予測）
+
+The same skeleton, varying only the foreground treatment, is predicted to yield four duties.
+These are the stimuli `program_{A,B,C,D}.{hex,mif}` in this directory:
+
+同一骨格で前景の扱いだけを変えると4種のデューティが得られると予測する。本ディレクトリの
+`program_{A,B,C,D}.{hex,mif}` がそのスティミュラスである:
+
+| Idiom / 流儀 | Foreground treatment / 前景の扱い | Predicted duty / 予測デューティ |
+|---|---|:---:|
+| A | naive (NOP OFF, Jump) / 素朴 | **25 : 35** |
+| B | NOP@2 → ON (0x0001) | **30 : 30** |
+| C | NOP@2 → ON + D17 flags (0x0003 / 0x0002) / 旗付き | **30 : 30** |
+| D | StaySet / background NOP / ProgEnd / QueJump / Stay厳守 | **25 : 25** |
+
+### Revised verdict criteria / 訂正後の判定基準
+
+| Observation | Verdict | Meaning |
+|---|---|---|
+| `presc_cnt`@entry constant across all windows; duties match the table (A 25:35, B/C 30:30, D 25:25) | **PASS** | A2 rejected; foreground-prescaling phase-locks the loop. Route to documenting the four duty idioms (Layer 2 / Layer 3), not an anomaly fix. |
+| `presc_cnt`@entry varies across windows; duties scatter | **ANOMALY (A2)** | Revert to the original A2 routing above (C4-T3 phase decision). |
+
+> The original verdict table above remains valid as the *pre-RH* decision tree. This addendum
+> supersedes its "ideal 25:25" row: under RH001–RH008, the naive idiom's correct steady duty
+> is 25:35, and the PASS condition is phase-constancy (not 25:25 symmetry).
+>
+> 上の元の判定表は *RH 改修前* の決定木として有効なまま。本追補はその「理想 25:25」行を更新する:
+> RH001–RH008 の下では素朴流儀の正しい定常デューティは 25:35 であり、PASS 条件は位相の不変性
+> （25:25 対称ではない）である。

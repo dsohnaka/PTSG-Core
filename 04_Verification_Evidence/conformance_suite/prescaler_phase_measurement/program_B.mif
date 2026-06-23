@@ -1,4 +1,4 @@
--- prescaler_phase_measurement — idiom A: naive 5-instruction blinky (foreground NOP+Jump prescaled) -> 25:35
+-- prescaler_phase_measurement — idiom B: NOP@2 -> ON, balances to -> 30:30
 -- Core parameter for this measurement: PRESCALE = 5.
 -- Silicon-verified on DE10-nano (SignalTap, 2026-06-22).
 DEPTH = 256;
@@ -8,7 +8,7 @@ DATA_RADIX = HEX;
 CONTENT BEGIN
 0 : 00010700;   -- Global/NOP  timing_signals=0x0001
 1 : 00010051;   -- Stay 5  timing_signals=0x0001
-2 : 00000700;   -- Global/NOP  timing_signals=0x0000
+2 : 00010700;   -- Global/NOP  timing_signals=0x0001
 3 : 00000051;   -- Stay 5  timing_signals=0x0000
 4 : 00000013;   -- Jump 1  timing_signals=0x0000
 [5..FF] : 00000000;

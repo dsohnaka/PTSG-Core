@@ -1,0 +1,19 @@
+-- prescaler_phase_measurement — idiom D: StaySet/background-NOP/ProgEnd/QueJump, Stay honoured exactly -> 25:25
+-- Core parameter for this measurement: PRESCALE = 5.
+-- Silicon-verified on DE10-nano (SignalTap, 2026-06-22).
+DEPTH = 256;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+CONTENT BEGIN
+0 : 00000700;   -- Global/NOP  timing_signals=0x0000
+1 : 00010200;   -- Global/StaySet  timing_signals=0x0001
+2 : 00000700;   -- Global/NOP  timing_signals=0x0000
+3 : 00010051;   -- Stay 5  timing_signals=0x0001
+4 : 00000200;   -- Global/StaySet  timing_signals=0x0000
+5 : 00000700;   -- Global/NOP  timing_signals=0x0000
+6 : 00000600;   -- Global/ProgEnd  timing_signals=0x0000
+7 : 00000013;   -- Jump 1  timing_signals=0x0000
+8 : 00000051;   -- Stay 5  timing_signals=0x0000
+[9..FF] : 00000000;
+END;
