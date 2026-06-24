@@ -346,6 +346,14 @@ Introduced in Chapter 4 § 4.5 at the protocol level. Pin-level details follow.
 
 The pin-level form depends on Tie C4-T2 (prescaler configuration). Each option implies a different external surface.
 
+> **v1.1 — Free-running, program-untouchable (C4-F9 / C3-F21).** Whatever C4-T2 form is chosen, the prescaler is a **free-running time-base**: its counter is reset only by the global hardware reset, never on wait entry, and **never by the program-issued Reset command** (C3-F21, provisional). The pin-level interface must therefore expose no path by which a running program can reset or perturb the prescaler. This is what allows a PTSG to be driven as an externally-synchronized **slave**: a slave has no influence over its time-base. (A Formation that deliberately opts in to a prescaler-resetting Reset, C3-V4, is a standalone, non-slave configuration.)
+>
+> **Forthcoming (Chapter 6 / Build Log #9):** the externalization of a **raw (pre-register) prescaler tick** so that one PTSG can supply the tick to others, making **master/slave synchronization** possible, and the one-clock-registered tick that improves Fmax. These are consequences of accepting the free-running prescaler and are reserved for the multi-PTSG coordination chapter.
+>
+> **v1.1 —— 自由走行・プログラムから不可触（C4-F9 / C3-F21）。** C4-T2 のいずれの形を選んでも、プリスケーラは**自由走行の時間基準**である: そのカウンタはグローバルハードウェアリセットでのみリセットされ、待機突入では決して、**プログラム発行の Reset コマンドでも決して**リセットされない（C3-F21、仮確定）。ゆえにピンレベルインターフェースは、走行中のプログラムがプリスケーラをリセットまたは擾乱できる経路を露出してはならない。これが PTSG を外部同期される**スレーブ**として駆動可能にするものである: スレーブは自身の時間基準に影響を持たない。（プリスケーラをリセットする Reset を意図的に選択する Formation（C3-V4）は、単独・非スレーブ構成である。）
+>
+> **近刊（第6章 / Build Log #9）:** 一つの PTSG が他へティックを供給し**マスター／スレーブ同期**を可能にする**生（レジスタ前）プリスケーラ・ティック**の外部化、および Fmax を改善する 1 クロック叩きティック。これらは自由走行プリスケーラ受容の帰結であり、複数 PTSG 協調の章に留保される。
+
 ピンレベル形式は Tie C4-T2(プリスケーラ構成)に依存する。各案は異なる外部表面を含意する。
 
 **Option (A) — Compile-time fixed.** The prescaler value is a synthesis-time parameter, not exposed at the pin level. The Core implementation has a parameter (e.g., a Verilog `parameter PRESCALER = 1` or a VHDL `generic`); the Formation sets it when instantiating the Core. No additional pins.

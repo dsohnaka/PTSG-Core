@@ -61,7 +61,9 @@ The chapter's three principal contributions are:
 
 ## 3.2 The Stay-Window Concept / Stayウィンドウ概念
 
-**Definition.** The **Stay window** is the period during which the Core's stay counter is active: it begins when **Stay Set** (Global sub-op 002, Chapter 2 § 2.8) executes and ends at **Stay-timeup** (when the stay counter reaches the value specified by the following Stay opcode's operand). All Global instructions encountered during this window are subject to background execution semantics; all non-Global instructions are processed as defined in Chapter 2.
+**Definition.** The **Stay window** is the period during which the Core's stay counter is active: it **opens** when **Stay Set** (Global sub-op 002, Chapter 2 § 2.8) executes and **closes** at **Stay-timeup** (when the stay counter reaches the value specified by the following Stay opcode's operand). All Global instructions encountered during this window are subject to background execution semantics; all non-Global instructions are processed as defined in Chapter 2.
+
+> **v1.1 refinement (C4-F10 — Stay Set = clear/sync-only).** Stay Set *arms* the stay counter (resets it to 0 and opens the window for background-execution scoping) but the counter does **not** begin counting at Stay Set. Counting begins at **Prog End** (or, if no Prog End is present, at the Stay instruction). This makes the wait equal to the Stay operand (in prescale ticks) plus a fixed startup latency, **independent of the background-program length** — eliminating the jitter that immediate-start (v1.0) would have introduced. The window-scoping rule (which Globals are background-executed) is unchanged: it is still "encountered between Stay Set and Stay-timeup."
 
 **定義。** **Stayウィンドウ**はコアのステイカウンタが活動的である期間である: それは **Stay Set** (Global サブop 002、第2章 § 2.8) が実行される時に始まり、**Stay-timeup**(ステイカウンタが続くStayオペコードのオペランドで指定された値に達する時)で終わる。本ウィンドウ中に遭遇するすべての Global 命令は裏実行意味論の対象である；すべての非 Global 命令は第2章で定義されたように処理される。
 
@@ -80,7 +82,7 @@ The chapter's three principal contributions are:
 
 | Position | Role |
 |---|---|
-| State N | **Window opener.** Stay Set executes; stay counter starts ticking from 0; timing signals enter "hold mode" (the value being held is specified below). / **ウィンドウ開設者。** Stay Set が実行される；ステイカウンタが 0 から刻み始める；タイミング信号が「保持モード」に入る(保持される値は以下で指定される)。 |
+| State N | **Window opener.** Stay Set executes; the stay counter is **armed** (reset to 0 and opened) but does **not** start counting yet (C4-F10 — counting begins at Prog End / the Stay instruction); timing signals enter "hold mode" (the value being held is specified below). / **ウィンドウ開設者。** Stay Set が実行される；ステイカウンタは**アーム**される(0 にリセットされ開かれる)が、まだカウントを**開始しない**(C4-F10——カウントは Prog End／Stay 命令で始まる)；タイミング信号が「保持モード」に入る。 |
 | States N+1 to N+k−1 | **Background-execution band.** Each Global encountered here is processed under background-execution semantics (§§ 3.3–3.5). Each state takes 1 clock to advance through. Non-Global instructions placed here are unusual but not prohibited; they execute as defined in Chapter 2. / **裏実行帯域。** ここで遭遇する各 Global は裏実行意味論(§§ 3.3-3.5)の下で処理される。各ステートは進むために 1 クロックを要する。ここに置かれた非 Global 命令は珍しいが禁止されない；第2章で定義されたように実行される。 |
 | State N+k | **Window closer.** Stay opcode is reached. Core halts at this state until stay counter = M. Any pending internal-mode reserved operations execute (scheduled backward from this moment). Any pending external-mode operations must have completed (constraint, § 3.6). When all complete, window closes; Core advances to N+k+1. / **ウィンドウ閉鎖者。** Stay オペコードに到達する。コアはステイカウンタ = M までこのステートで停止する。任意の保留中の内部モード予約演算が実行される(この瞬間から後方スケジュール)。任意の保留中の外部モード演算は完了していなければならない(制約、§ 3.6)。すべて完了した時、ウィンドウは閉じる；コアは N+k+1 に進む。 |
 
@@ -234,6 +236,42 @@ The contributor's current intent is (A) FIFO. However, the use case for multiple
 **Special case: Stay Set inside a Stay window.** What happens if a Stay Set is encountered *inside* an already-open Stay window? This is recorded as Tie C3-T3. The alternatives: (A) the inner Stay Set is treated as a no-op (the existing window continues); (B) the inner Stay Set ends the current window and starts a new one (resetting the stay counter); (C) the inner Stay Set is an error / undefined behavior. The contributor leans toward (A), but the question is genuinely open.
 
 **特殊ケース: Stayウィンドウ内のStay Set。** Stay Set が*すでに開いている*Stayウィンドウ内で遭遇された場合、何が起こるか? これは Tie C3-T3 として記録される。代替案: (A) 内側の Stay Set は no-op として扱われる(既存のウィンドウが継続する)；(B) 内側の Stay Set は現在のウィンドウを終了し新しいものを開始する(ステイカウンタをリセット)；(C) 内側の Stay Set はエラー／未定義挙動。貢献者は (A) に傾くが、問いは真に開かれている。
+
+---
+
+## 3.4a The Reset Command — Execution Bands and the No-Prescaler-Reset Principle (v1.1, PROVISIONAL / 仮確定) / Reset コマンド — 実行帯域と非プリスケーラ・リセット原則 (v1.1, 仮確定)
+
+> **PROVISIONAL (仮確定).** This section records a forward-looking decision that still requires (a) RTL changes to the Reset command path and (b) confirmation against the master/slave external interface (Chapter 5 / Chapter 6). It is a committed direction, marked provisional to distinguish it from the silicon-confirmed results elsewhere in v1.1. Reasoning archived in Layer 2 trace `2026-06-23_ptsg-reset-command-bands`.
+>
+> **仮確定。** 本節は、(a) Reset コマンド経路の RTL 改変と (b) マスター／スレーブ外部インターフェース（第5章／第6章）との照合をなお要する前向きの判断を記録する。確定した方向性であり、v1.1 の他所のシリコン確認済み結果と区別するため仮確定と記す。推論は Layer 2 トレース `2026-06-23_ptsg-reset-command-bands` に保管。
+
+The Reset command is internal-control sub-opcode 0 (Chapter 2 § 2.8, C2-V3): it forces State Number to 0 and resets the stay and loop counters. v1.1 makes two things explicit about it, both enabled by the now-settled free-running prescaler (C4-F9) and the state-0 NOP alignment convention (C4-V3).
+
+Reset コマンドは内部制御サブオペコード 0（第2章 § 2.8、C2-V3）である: ステートナンバーを 0 に強制し、ステイカウンタとループカウンタをリセットする。v1.1 はそれについて二点を明示する。いずれも、決着したフリーランプリスケーラ（C4-F9）と state-0 NOP 整列慣習（C4-V3）が可能にしたものである。
+
+### The no-prescaler-reset principle — C3-F21 (PROVISIONAL) / 非プリスケーラ・リセット原則 — C3-F21（仮確定）
+
+**The Reset command does NOT reset the prescaler.** The prescaler is fully free-running (C4-F9); the Reset command resets the execution context (State Number, stay/loop counters) but leaves the prescaler counter untouched. The reason is **external synchronizability**: a slave PTSG follows an externally-supplied time-base and must have *no* influence over it. If a slave's instruction stream could reset the prescaler, it could break synchronization with its master. The prescaler is therefore a time-base, not a program-controlled timer. (A program needing a "clean phase from Reset" cannot obtain it from the Core; that is a Formation concern, C3-V4.)
+
+**Reset コマンドはプリスケーラをリセットしない。** プリスケーラは完全に自由走行である（C4-F9）；Reset コマンドは実行文脈（ステートナンバー、ステイ／ループカウンタ）をリセットするが、プリスケーラカウンタには触れない。理由は**外部同期可能性**である: スレーブ PTSG は外部供給の時間基準に従い、それに*一切*影響できてはならない。スレーブの命令ストリームがプリスケーラをリセットできれば、マスターとの同期を壊し得る。ゆえにプリスケーラは時間基準であって、プログラム制御のタイマーではない。（「Reset からの綺麗な位相」を要するプログラムはコアからそれを得られない；それは Formation の領分、C3-V4。）
+
+### Reset execution bands — C3-F22 (PROVISIONAL) / Reset 実行帯域 — C3-F22（仮確定）
+
+Like any command, Reset's behavior is selected by the band it runs in (the general band model is C3-F2). Alignment is delegated to the following state-0-style NOP (C4-V3), so Reset itself need not be prescaled:
+
+任意のコマンドと同様、Reset の挙動はそれが走る帯域で選ばれる（一般帯域モデルは C3-F2）。整列は後続の state-0 流 NOP（C4-V3）に委ねられるため、Reset 自身はプリスケールド化されなくてよい:
+
+| Band / 帯域 | Reset behavior / Reset の挙動 |
+|---|---|
+| **Foreground (non-prescaled, immediate)** / 前景（ノンプリスケールド、即時） | The reset happens at once. The following state-0-style NOP performs the alignment. If Reset and that NOP share the same `timing_signals` value, the combined **Reset+NOP region equals exactly one prescale period**. This is the normal, lowest-latency band. / リセットは即座に起こる。後続の state-0 流 NOP が整列する。Reset とその NOP が同じ `timing_signals` 値を共有すれば、**Reset+NOP 区間はちょうど 1 プリスケール周期に等しい**。これが通常・最小レイテンシ帯域。 |
+| **Background ("staff meal", indeterminate)** / 背景（「まかない」、不定） | The Reset+NOP region becomes indeterminate in length. Reserved for genuine **emergencies** where an immediate reset matters more than a defined region length. / Reset+NOP 区間は長さが不定になる。即時リセットが区間長の確定より重要な真の**緊急時**に留保。 |
+| **Queued (effectively prescaled)** / Que（実質プリスケールド） | The Reset fires at Stay-timeup, landing on a prescale boundary. / Reset は Stay-timeup で発火し、プリスケール境界に乗る。 |
+
+### Formation opt-in for a prescaler-resetting Reset — C3-V4 (PROVISIONAL) / プリスケーラをリセットする Reset の Formation opt-in — C3-V4（仮確定）
+
+The Core forbids prescaler reset by principle (C3-F21). A **Formation MAY opt in** to a prescaler-resetting Reset where its application genuinely needs one — thereby also accepting the loss of external synchronizability that the deviation implies. A standalone (non-slave) PTSG that will never be externally synchronized loses nothing by resetting its own prescaler; a **slave configuration must structurally never** be able to. The opt-in belongs at the Formation boundary so each application makes the choice with full knowledge of its own synchronization role. This is the Core-Formation separation acting as a release valve: the Core stays synchronizable-by-default, the rare contrary need is met outward.
+
+コアは原則としてプリスケーラ・リセットを禁じる（C3-F21）。**Formation は**、その応用が本当に必要とする場合、プリスケーラをリセットする Reset を**選択してよい**——その際、逸脱が含意する外部同期可能性の喪失も受け入れる。外部同期されない単独（非スレーブ）PTSG は自分のプリスケーラをリセットしても何も失わない；**スレーブ構成は構造的に決してそれをできてはならない**。opt-in は Formation 境界に属し、各応用は自身の同期役割を完全に把握した上で選択する。これは Core-Formation 分離が安全弁として働くものである: コアは既定で同期可能なまま、稀な反対の必要は外で満たされる。
 
 ---
 
@@ -591,11 +629,14 @@ Following Chapter 2's classification scheme: **Fixed (F)** = architectural commi
 | **C3-F14** | Loop counters are externally exposed as outputs (for pipeline vector arithmetic etc.) / ループカウンタは外部に出力として露出される(パイプラインベクタ算術等のため) | **F** |
 | **C3-T9** | **(DISSOLVED in v1.1)** Loop-counter-at-zero behavior — dissolved by the up-count transition (C3-F17). The counter always starts at 0; zero is simply the loop's normal beginning, so there is no degenerate at-zero case to disambiguate. / **(v1.1 で消滅)** ループカウンタゼロ挙動——アップカウント移行(C3-F17)により消滅。カウンタは常に 0 から始まる；ゼロは単にループの通常の始まりであり、曖昧性除去すべき退化したゼロ事例は存在しない。 | dissolved (was Tie) |
 | **C3-F15** (v1.1) | D16–D31 extended-operand repurposing for internal-mode Globals needing a 12-bit parameter (Loop target, Sub-sequence Call offset). Flat extended operand, no Mode sub-field; the elaborate Mode scheme was declined (memo only). See Chapter 2 v1.1 § 2.7/§ 2.13 (C2-F11). / 12ビットパラメータを必要とする内部モード Global(Loop 目標、Sub-sequence Call オフセット)のための D16-D31 拡張オペランド再目的化。平坦な拡張オペランド、Mode サブフィールドなし；精巧な Mode スキームは不採用(メモのみ)。第2章 v1.1 § 2.7/§ 2.13 (C2-F11) 参照。 | **F** (v1.1 bug fix) |
-| **C3-T10** (v1.1, new) | Prescale evaluation timing — leading edge vs trailing edge for queued execution. Leading edge can hold a flag/signal for a full prescale period (good for external strobes); semantics to be verified. Deferred to Chapter 4 (prescaler). / プリスケール判定タイミング——キュー実行の前縁 対 後縁。前縁はフラグ／信号をプリスケール1周期分保持できる(外部ストローブに良い)；意味論は要検証。第4章(プリスケーラ)へ繰り延べ。 | **T** (deferred) |
-| **C3-T11** (v1.1, new) | Exact role/timing of Stay Set — whether it should be only a clear/sync command (with the actual count-start deferred to Prog End or the Stay command) to eliminate timing jitter from background-program clocks. Entangled with Prog End; deferred to Chapter 4. / Stay Set の正確な役割／タイミング——裏プログラムクロックからのタイミングジッタを排除するため、単なるクリア／同期命令とすべきか(実際のカウント開始を Prog End または Stay コマンドへ繰り延べ)。Prog End と絡む；第4章へ繰り延べ。 | **T** (deferred) |
+| **C3-T10 → C4-T3** (v1.1) | Prescale **edge** for queued execution — leading vs trailing edge. Now situated as **Tie C4-T3** in Chapter 4 § 4.9, scope clarified to the edge question only. (The separate *phase*-alignment question is **resolved** by C4-F9, free-running structural phase-lock — do not conflate.) / キュー実行のプリスケール**縁**——前縁 対 後縁。第4章 § 4.9 に **Tie C4-T3** として置かれ、射程を縁の問いのみに明確化。（別個の*位相*整列の問いは C4-F9（自由走行・構造的位相ロック）で**解決**——混同しないこと。） | **T** (now C4-T3) |
+| **C3-T11 → C4-F10** (v1.1) | **RESOLVED.** Stay Set is clear/sync-only: it arms the stay counter, which begins counting at Prog End (or the Stay instruction). Eliminates background-program-length jitter. Silicon-confirmed via duty idiom D. Now **Fixed C4-F10** (Chapter 4 § 4.9). The § 3.2 Stay-window definition is revised accordingly in v1.1. / **解決。** Stay Set はクリア／同期のみ: ステイカウンタをアームし、カウントは Prog End（または Stay 命令）で始まる。背景プログラム長ジッタを排除。流儀 D で実機確認済み。今や **Fixed C4-F10**（第4章 § 4.9）。§ 3.2 Stay ウィンドウ定義は v1.1 で相応に改訂。 | **F** (now C4-F10) |
 | **C3-T12** (v1.1, new) | Local Branch — a zero-time-axis conditional branch for use inside the immediate background band (the top-level Branch consumes a clock / self-loops, breaking the timing hold). Would occupy an internal sub-opcode slot. Deferred to Chapter 4. / Local Branch——即時裏帯域内で使うゼロ時間軸条件分岐(トップレベル Branch はクロックを消費／自己ループし、タイミング保持を破壊する)。内部サブオペコードスロットを占有する。第4章へ繰り延べ。 | **T** (deferred) |
 | **C3-T13** (v1.1, new) | Queued NOP — whether a NOP placed after Prog End should function as a Timeup-tracking timing placeholder (sliding one prescaled unit / a specific pin phase in at the very end of the wait). Deferred to Chapter 4. / キュー NOP——Prog End の後に置かれた NOP が、Timeup 追尾型タイミングプレースホルダーとして機能すべきか(待機の最末尾にプリスケール1単位／特定ピンフェーズを滑り込ませる)。第4章へ繰り延べ。 | **T** (deferred) |
 | **C3-T14** (v1.1, new) | Final internal-control sub-opcode 0–7 layout — including Prog End's permanent slot (tentatively 6), whether a Local Branch is added, and the fate of NOP (one proposal removes NOP to free a slot). Deferred to Chapter 4. / 最終的な内部制御サブオペコード 0-7 レイアウト——Prog End の恒久スロット(暫定 6)、Local Branch が追加されるか、NOP の運命(ある提案は NOP を除いてスロットを空ける)を含む。第4章へ繰り延べ。 | **T** (deferred) |
+| **C3-F21** (v1.1, PROVISIONAL) | **No-prescaler-reset principle.** The program-issued Reset command does NOT reset the prescaler; the prescaler is fully free-running (C4-F9). Reason: a slave PTSG must have no influence over the externally-driven time-base. See § 3.4a. / **非プリスケーラ・リセット原則。** プログラム発行の Reset コマンドはプリスケーラをリセットしない；プリスケーラは完全フリーラン（C4-F9）。理由: スレーブ PTSG は外部駆動の時間基準に影響できてはならない。§ 3.4a 参照。 | **F** (仮確定) |
+| **C3-F22** (v1.1, PROVISIONAL) | **Reset execution bands.** Reset is selectable across foreground (immediate, aligned by the following state-0 NOP; Reset+NOP sharing one timing_signals value = one prescale period), background ("staff meal", indeterminate, emergencies), and queued (effectively prescaled, fires at Stay-timeup). See § 3.4a. / **Reset 実行帯域。** Reset は前景（即時、後続 state-0 NOP で整列；Reset+NOP が一 timing_signals 値共有 = 1 プリスケール周期）、背景（「まかない」、不定、緊急）、Que（実質プリスケールド、Stay-timeup 発火）で選択可能。§ 3.4a 参照。 | **F** (仮確定) |
+| **C3-V4** (v1.1, PROVISIONAL) | **Formation opt-in for prescaler-resetting Reset.** The Core forbids prescaler reset (C3-F21); a Formation MAY opt in where genuinely needed, accepting the loss of external synchronizability. A slave configuration must structurally never be able to reset the prescaler. See § 3.4a. / **プリスケーラをリセットする Reset の Formation opt-in。** コアはプリスケーラ・リセットを禁じる（C3-F21）；Formation は本当に必要なら選択でき、外部同期可能性の喪失を受け入れる。スレーブ構成は構造的に決してプリスケーラをリセットできてはならない。§ 3.4a 参照。 | **V** (仮確定) |
 
 **Decision count by status (v1.1):**
 

@@ -19,6 +19,14 @@
 
 ---
 
+> ### Version Note — v1.1 (Silicon-Verified Update) / バージョンノート — v1.1（実機検証アップデート）
+>
+> **This is the v1.1 update of Chapter 4, incorporating the results of the Layer 4 verification campaign (Hook A / `prescaler_phase_measurement`).** The DE10-nano silicon work and the white-box simulations that resolved the residual bring-up anomaly (Build Log #6 → #7 → #8) have promoted three previously-Tie/implicit items to **Fixed**, and added one **Convention**. Specifically: foreground commands are prescaled (**C4-F8**, new); the prescaler is free-running and never reset on wait entry, which makes the loop structurally phase-locked (**C4-F9**, new); the Stay Set role is resolved as clear/sync-only (**C4-F10**, was Tie C4-T4); and the state-0 NOP cold-start convention is recorded (**C4-V3**, new). The reasoning is archived in the Layer 2 traces `2026-06-22_ptsg-prescaler-phase-resolution`, `2026-06-22_ptsg-duty-idioms`, and `2026-06-22_ptsg-state0-nop-triple-role`; the evidence is in `04_Verification_Evidence/.../prescaler_phase_measurement/`. **Correction:** an earlier conformance-matrix note conflated the prescaler *phase* (now resolved, C4-F9) with the prescale-*edge* Tie C4-T3 (leading vs trailing edge of queued firing — still open). § 4.9 and § 4.12 keep them distinct.
+>
+> **これは第4章の v1.1 アップデートであり、Layer 4 検証キャンペーン（Hook A / `prescaler_phase_measurement`）の結果を取り込む。** 残留ブリングアップ異常を解決した DE10-nano 実機作業と白箱シミュレーション（Build Log #6 → #7 → #8）により、従来 Tie ないし暗黙だった三項目が **Fixed** に昇格し、一つの **Convention** が追加された。具体的に: 前景コマンドはプリスケールド実行される（**C4-F8**、新規）；プリスケーラは自由走行し待機突入で決してリセットされず、ループは構造的に位相ロックする（**C4-F9**、新規）；Stay Set 役割はクリア／同期のみとして解決（**C4-F10**、旧 Tie C4-T4）；state-0 NOP 冷態起動慣習を記録（**C4-V3**、新規）。推論は Layer 2 トレース三本に保管され、エビデンスは上記 Layer 4 にある。**訂正:** 以前の conformance-matrix 注記はプリスケーラ*位相*（今や解決、C4-F9）とプリスケール*縁* Tie C4-T3（キュー発火の前縁／後縁——なお未決）を混同していた。§ 4.9 と § 4.12 は両者を区別して保つ。
+
+---
+
 ## 4.1 Purpose of this Chapter / 本章の目的
 
 Chapters 2 and 3 specified the Core's static instruction-set surface and its dynamic background-execution mechanics. Several extension points were deferred to this chapter because they share a common architectural pattern: **the Core extends its reach by selectively delegating to external resources.** Specifically:
@@ -241,9 +249,9 @@ The prescaler interacts with the v1.1 background-execution model (Chapter 3 § 3
 
 プリスケーラは v1.1 の裏実行モデル(第3章 § 3.3a)と特定の方法で相互作用する:
 
-**Foreground states run at full system clock.** A state advances every system clock regardless of prescaler setting. Foreground Stay, Branch, Jump, and Global instructions take 1 system clock each (subject to C2-T4).
+**Foreground commands are prescaled (C4-F8).** A foreground command (NOP, Jump, Branch taken, and the control-flow Globals) advances to its next state on the next **prescaler tick**, consuming one whole prescale unit. This is the RH001/006 behavior, silicon-confirmed in the Layer 4 `prescaler_phase_measurement` campaign. (This supersedes the v1.0 "1 system clock each" statement and resolves C2-T4 in the prescaled direction; see § 4.8a and C4-F8.) The Stay opcode's wait, of course, scales with the prescaler as before. **Consequence:** because every command costs a whole number of prescale units, any loop built from them has a total length that is an integer multiple of the prescale period — the structural basis of the phase-lock recorded as C4-F9.
 
-**前景ステートはフルシステムクロックで走る。** ステートはプリスケーラ設定に関わらずシステムクロック毎に進む。前景 Stay、Branch、Jump、Global 命令はそれぞれ 1 システムクロックを取る(C2-T4 対象)。
+**前景コマンドはプリスケールド実行される（C4-F8）。** 前景コマンド（NOP、Jump、取られる Branch、および制御フロー Global）は、次の**プリスケーラ・ティック**で次のステートへ進み、丸ごと 1 プリスケール単位を消費する。これは RH001/006 の挙動で、Layer 4 `prescaler_phase_measurement` キャンペーンで実機確認された。（これは v1.0 の「各 1 システムクロック」を置き換え、C2-T4 をプリスケールド方向で解決する；§ 4.8a と C4-F8 参照。）Stay オペコードの待機が従来どおりプリスケーラに合わせてスケールするのは当然である。**帰結:** あらゆるコマンドが整数個のプリスケール単位を費やすため、それらから成るループの全長はプリスケール周期の整数倍になる——C4-F9 として記録される位相ロックの構造的基盤である。
 
 **The Stay window's wait scales with prescaler.** Once a Stay instruction is reached and the Core halts waiting for the stay counter to reach the operand value, the stay counter ticks at the *prescaled* rate. So a Stay with operand 1000 and prescaler 50,000 waits 1000 × 50,000 = 50,000,000 system clocks (1 second at 50 MHz).
 
@@ -259,11 +267,62 @@ The prescaler interacts with the v1.1 background-execution model (Chapter 3 § 3
 
 ---
 
+## 4.8a Foreground Prescaling, Structural Phase-Lock, and the Duty Idioms (v1.1) / 前景プリスケールド化・構造的位相ロック・デューティ流儀 (v1.1)
+
+This section records three coupled v1.1 results from the Layer 4 verification campaign. Together they establish PTSG's timing rigor — the property that makes the Core suitable not only for LED blinking but for **communication and video-synchronization timing**, where a stated count must equal the cycles on the wire.
+
+本節は Layer 4 検証キャンペーンから得た、結合した三つの v1.1 結果を記録する。これらは合わせて PTSG のタイミング厳格性——LED 点滅のみならず、記述したカウントが線上のサイクルと一致せねばならない**通信およびビデオ同期のタイミング**にコアを適合させる性質——を確立する。
+
+### Foreground prescaling — C4-F8 (Fixed) / 前景プリスケールド化 — C4-F8（Fixed）
+
+A foreground command advances on the next prescaler tick, consuming **one whole prescale unit**, not one system clock. This is the deliberate RH001/006 behavior. The consequence is decisive: every command — control flow included — costs a whole number of prescale units, so any loop is an **integer multiple of the prescale period**.
+
+前景コマンドは次のプリスケーラ・ティックで進み、1 システムクロックではなく**丸ごと 1 プリスケール単位**を消費する。これは意図的な RH001/006 の挙動である。帰結は決定的: あらゆるコマンド——制御フローを含め——が整数個のプリスケール単位を費やすため、いかなるループも**プリスケール周期の整数倍**になる。
+
+*Contrast with background (C4-F3):* the immediate-band background program (between Stay Set and Prog End) still runs at full system clock. This asymmetry — foreground prescaled, in-window background full-clock — is exactly what lets a program choose whether a command contributes to the duty (idioms below).
+
+*背景（C4-F3）との対比:* 即時帯域の背景プログラム（Stay Set と Prog End の間）は依然フルシステムクロックで走る。この非対称——前景はプリスケールド、ウィンドウ内背景はフルクロック——こそが、コマンドがデューティに寄与するか否かをプログラムが選べるようにする（下記の流儀）。
+
+### Structural phase-lock and the free-running prescaler — C4-F9 (Fixed) / 構造的位相ロックと自由走行プリスケーラ — C4-F9（Fixed）
+
+The prescaler is **free-running**: its counter is reset only by the global hardware reset, **never** on wait entry and **never** by the program-issued Reset command (see Chapter 3, Reset). Because foreground prescaling (C4-F8) makes every loop an integer multiple of the prescale period, the prescaler re-enters every wait at the **same phase**. The phase is therefore **structurally locked**, and the first-tick delay is invariant — **there is no phase-dependent jitter**, with no per-wait alignment hardware.
+
+プリスケーラは**自由走行**である: そのカウンタはグローバルなハードウェアリセットでのみリセットされ、待機突入では**決して**、プログラム発行の Reset コマンドでも**決して**リセットされない（第3章 Reset 参照）。前景プリスケールド化（C4-F8）が全ループをプリスケール周期の整数倍にするため、プリスケーラは毎回**同一位相**で待機に再突入する。ゆえに位相は**構造的にロック**され、初回ティック遅延は不変である——**位相依存のジッタは存在せず**、待機ごとの整列ハードウェアも不要である。
+
+This resolves the residual bring-up anomaly (audit hypothesis A2): the suspected free-running phase jitter cannot occur, because it would require a command consuming a prescale-misaligned number of clocks, which C4-F8 eliminates. Silicon-confirmed (white-box and DE10-nano agree clock-for-clock). The free-running property is also a prerequisite for external master/slave synchronization (Chapter 5 / Chapter 6, forthcoming): a slave must have no influence over the time-base, hence the no-prescaler-reset rule.
+
+これは残留ブリングアップ異常（監査仮説 A2）を解決する: 疑われた自由走行位相ジッタは起こり得ない、なぜならそれにはプリスケール非整合なクロックを消費するコマンドが必要だが、C4-F8 がそれを消すからである。実機確認済み（白箱と DE10-nano がクロック単位で一致）。自由走行性は外部マスター／スレーブ同期（第5章／第6章、近刊）の前提条件でもある: スレーブは時間基準に影響できてはならず、ゆえに非プリスケーラ・リセット規則がある。
+
+### The duty idioms — worked illustration / デューティ流儀 — 実例
+
+Foreground prescaling means a simple blink is not one waveform but a family, selected by where the foreground cost is placed. All four are silicon-verified (`prescaler_phase_measurement`, idioms A–D) and detailed in the Layer 2 trace `2026-06-22_ptsg-duty-idioms`.
+
+前景プリスケールド化により、単純な点滅は一つの波形でなく、前景コストをどこに置くかで選ばれる族である。4本すべて実機検証済み（`prescaler_phase_measurement`、流儀 A–D）で、Layer 2 トレース `2026-06-22_ptsg-duty-idioms` に詳述。
+
+| Idiom / 流儀 | How / 書き方 | Duty / デューティ | Principle / 原理 |
+|---|---|:---:|---|
+| **A** naive / 素朴 | foreground NOP + Jump | **25 : 35** | both foreground commands prescaled → +2 units on OFF (correct) / 前景2命令がプリスケールド → OFF に +2 単位（正しい） |
+| **B** balance / 均し | re-tag NOP to ON | **30 : 30** | move one unit to ON / 1 単位を ON へ |
+| **C** flag / 旗付き | B + D17 on NOP/Jump | **30 : 30** | balance **and** mark the foreground-added cycles via timing_signals[1] / 均しつつ前景付加サイクルを D17 で外部標示 |
+| **D** Stay-exact / Stay厳守 | StaySet → bg NOP → Stay → … → ProgEnd → QueJump | **25 : 25** | foreground cost driven to zero; the wire equals the written Stay (depends on C4-F10) / 前景コストをゼロに；線が記述 Stay に一致（C4-F10 に依存） |
+
+Idiom D is the bridge to exact-width applications (e.g. a test-vector or sync-signal Formation): it is the only idiom in which the Stay number on the page equals the cycles on the wire.
+
+流儀 D は正確幅応用（例: テストベクタや同期信号の Formation）への橋である: 紙の Stay 数が線上のサイクル数に等しい唯一の流儀。
+
+### State-0 NOP cold-start convention — C4-V3 (Convention) / state-0 NOP 冷態起動慣習 — C4-V3（Convention）
+
+Because the prescaler is free-running (C4-F9), its phase at the instant the global reset releases is not knowable in advance, so the **first** state after reset has an indeterminate length (up to one prescale period). The recommended convention is to place a **foreground NOP at state 0** as an isolation container that absorbs this one-time indeterminacy: from state 1 onward the prescaler is phase-locked and every Stay is exact. A NOP is used rather than a `Stay 1` so that the Stay primitive's "exactly N units" guarantee is never stained on its first instance. Optionally, the state-0 NOP may raise a timing_signal to externally mark the indeterminate startup region. State 0 is not special-cased in hardware (reset merely enters at address 0); the triple role (foreground execution / isolation container / external marker) is a programming convention. A Formation may use state 0 for real work if it understands the indeterminate first-instance length. Reasoning: Layer 2 trace `2026-06-22_ptsg-state0-nop-triple-role`.
+
+プリスケーラが自由走行（C4-F9）であるため、グローバルリセット解放の瞬間の位相は事前に知り得ず、ゆえにリセット後の**最初**のステートは長さが不定（最大 1 プリスケール周期）になる。推奨慣習は、この一度きりの不定性を吸収する隔離容器として **state 0 に前景 NOP** を置くことである: state 1 以降プリスケーラは位相ロックし、全 Stay は正確になる。`Stay 1` でなく NOP を使うのは、Stay プリミティブの「ちょうど N 単位」保証を初回インスタンスで決して汚さないためである。任意で、state-0 NOP は timing_signal を立てて不定な起動区間を外部標示できる。state 0 はハードウェアで特別扱いされない（リセットは単にアドレス 0 に入るだけ）；三重役割（前景実行／隔離容器／外部標示）はプログラミング慣習である。Formation は、不定な初回インスタンス長を理解すれば state 0 を実作業に使える。推論: Layer 2 トレース `2026-06-22_ptsg-state0-nop-triple-role`。
+
+---
+
 ## 4.9 Resolution of C3-T10 (Prescale Edge) and C3-T11 (Stay Set Role) / C3-T10(プリスケール縁)と C3-T11(Stay Set 役割)の解決
 
-Two Ties deferred from Chapter 3 v1.1 are prescaler-coupled and are addressed here. Both remain Ties pending community input; this section records the contributor's analysis and tentative lean.
+Two Ties deferred from Chapter 3 v1.1 are prescaler-coupled and are addressed here. **In v1.1, C3-T11 (Stay Set role) is RESOLVED to Fixed (C4-F10) on the strength of silicon evidence; C3-T10 (prescale edge) remains a Tie (C4-T3), now with its scope clarified.**
 
-第3章 v1.1 から繰り延べられた二つの Tie がプリスケーラ結合であり、ここで扱われる。両方ともコミュニティ入力を待つ Tie のままである；本節は貢献者の分析と暫定的傾向を記録する。
+第3章 v1.1 から繰り延べられた二つの Tie がプリスケーラ結合であり、ここで扱われる。**v1.1 において、C3-T11（Stay Set 役割）は実機エビデンスに基づき Fixed（C4-F10）へ解決される；C3-T10（プリスケール縁）は Tie（C4-T3）のまま、ただし射程を明確化した。**
 
 ### C3-T10 — Prescale Evaluation Timing (Leading vs Trailing Edge)
 
@@ -279,9 +338,13 @@ Two Ties deferred from Chapter 3 v1.1 are prescaler-coupled and are addressed he
 - **(A) 前縁:** キュー演算はカウンタが目標に達するプリスケール周期の*始まり*で発火する。一致フラグ(`stay_cnt_match`)は前縁でアサートされ、完全なプリスケール周期にわたって保持される。利点: 外部ハードウェアが一致フラグに反応するのにフルプリスケール周期(潜在的に長い)を持つ——持続的なストローブとして有用。欠点: 「Stay 完了」イベントが今や字義的な待機の終わりと不整合——わずかに直感に反する。
 - **(B) 後縁:** キュー演算はカウンタが目標に達するプリスケール周期の*終わり*で発火する——つまり、Stay が実際に終わるちょうどその時。一致フラグはこの後縁で 1 システムクロック アサートされる。利点: 直感と整列(Stay 終わり → 演算発火)。欠点: 短い一致フラグパルスは遅い外部ロジックには捕捉が難しい場合がある。
 
-**Contributor's lean.** **(A) leading edge** for the match flag (full-prescale-period hold gives external logic time to react cleanly) but **(B) trailing edge** for the actual queued-operation firing (so that the Stay literally ends when it should). This is technically a hybrid: the flag is leading-edge, the action is trailing-edge. The hybrid may be the most useful in practice but requires careful Chapter 5 specification. Recorded as **Tie** C4-T3 with the hybrid as the leading proposal.
+**Scope clarification (v1.1).** C4-T3 concerns **only** *where within the prescale period* a queued firing lands — the leading vs trailing **edge**. It does **not** concern whether the prescaler is wait-aligned: that *phase* question is resolved separately and affirmatively by C4-F9 (the free-running prescaler is structurally phase-locked). An earlier conformance-matrix note conflated the two; they are independent.
 
-**貢献者の傾向。** 一致フラグには **(A) 前縁**(フルプリスケール周期保持は外部ロジックが綺麗に反応する時間を与える)、しかし実際のキュー演算発火には **(B) 後縁**(Stay は実際に終わるべき時に文字通り終わるように)。これは技術的にはハイブリッドである: フラグは前縁、アクションは後縁。ハイブリッドは実際には最も有用かもしれないが、第5章の注意深い仕様化を要求する。ハイブリッドを先頭提案として **Tie** C4-T3 で記録。
+**Contributor's lean.** **(A) leading edge** for the match flag (full-prescale-period hold gives external logic time to react cleanly) but **(B) trailing edge** for the actual queued-operation firing (so that the Stay literally ends when it should). This is technically a hybrid: the flag is leading-edge, the action is trailing-edge. The hybrid may be the most useful in practice but requires careful Chapter 5 specification. **Remains Tie** C4-T3 with the hybrid as the leading proposal.
+
+**射程の明確化（v1.1）。** C4-T3 は、キュー発火がプリスケール周期の*どこに*乗るか——前縁か後縁かという**縁**——**のみ**を扱う。プリスケーラが待機整列されるか否かは扱わない: その*位相*の問いは C4-F9（自由走行プリスケーラは構造的に位相ロックする）によって別途、肯定的に解決される。以前の conformance-matrix 注記は両者を混同したが、両者は独立である。
+
+**貢献者の傾向。** 一致フラグには **(A) 前縁**(フルプリスケール周期保持は外部ロジックが綺麗に反応する時間を与える)、しかし実際のキュー演算発火には **(B) 後縁**(Stay は実際に終わるべき時に文字通り終わるように)。これは技術的にはハイブリッドである: フラグは前縁、アクションは後縁。ハイブリッドは実際には最も有用かもしれないが、第5章の注意深い仕様化を要求する。ハイブリッドを先頭提案として **Tie** C4-T3 のまま記録。
 
 ### C3-T11 — Stay Set Exact Role
 
@@ -299,13 +362,13 @@ Two Ties deferred from Chapter 3 v1.1 are prescaler-coupled and are addressed he
 - **(B) クリア／同期のみ:** Stay Set はステイカウンタを 0 にリセットしアームするが、カウンタはティックを*開始しない*。実際のカウントは **Prog End** が遭遇された時(または Prog End が存在しないなら Stay 命令に到達した時)に始まる。利点: ジッタを排除；待機はちょうど Stay オペランド値(プリスケールティックで)に固定起動レイテンシを加えたもので、裏プログラム長から独立する。欠点: より複雑な Stay Set 意味論；「Stay ウィンドウ」概念が「Stay Set アーム → Prog End 開始 → Stay timeup」になる。
 - **(C) Stay Set 毎に設定可能:** Stay Set のエンコーディング内のフラグビットが即時開始とアームのみモードの間を選択する。利点: 最大の柔軟性。欠点: エンコーディングビットを消費；Stay Set 変種の複雑性を追加。
 
-**Contributor's lean.** **(B) clear/sync only.** The jitter elimination is architecturally important for any application where the Stay's actual duration matters (e.g., audio sample timing, communication-protocol timing). The added complexity is local to Stay Set and Prog End; the rest of the Core is unchanged. Recorded as **Tie** C4-T4 with (B) as the leading proposal.
+**Resolution (v1.1) — RESOLVED as (B), now Fixed C4-F10.** Clear/sync-only is adopted. The jitter elimination is architecturally important for PTSG's intended applications — which include **communication and video-synchronization timing**, not merely LED blinking — where the Stay's actual duration is a contract, not an approximation. Silicon evidence: duty idiom D (StaySet → background NOP → Stay → … → Prog End → Queued Jump → Stay) reproduces the written Stay count exactly (25:25), with the in-window background NOP contributing zero duty and the queued Jump firing at timeup — confirmed clock-for-clock on DE10-nano (`prescaler_phase_measurement`, idiom D) and at the internal-register level (`window_open` / `prog_end_seen` / `queued_valid`). The added complexity is local to Stay Set and Prog End; the rest of the Core is unchanged. Promoted from Tie C4-T4 to **Fixed C4-F10**.
 
-**貢献者の傾向。** **(B) クリア／同期のみ。** ジッタ排除は、Stay の実際の持続時間が重要な任意の応用(例: 音声サンプルタイミング、通信プロトコルタイミング)にアーキテクチャ的に重要である。追加された複雑性は Stay Set と Prog End にローカルである；コアの残りは変わらない。(B) を先頭提案として **Tie** C4-T4 で記録。
+**解決（v1.1）—— (B) として解決、Fixed C4-F10 へ。** クリア／同期のみを採用する。ジッタ排除は PTSG の意図する応用——LED 点滅だけでなく**通信およびビデオ同期のタイミング**を含む——にアーキテクチャ的に重要であり、そこでは Stay の実際の持続時間は近似でなく契約である。実機エビデンス: 流儀 D（StaySet → 背景 NOP → Stay → … → Prog End → キュー Jump → Stay）は記述された Stay 数を正確に（25:25）再現し、ウィンドウ内背景 NOP のデューティ寄与はゼロ、キュー Jump は timeup で発火する——DE10-nano（`prescaler_phase_measurement`、流儀 D）でクロック単位、内部レジスタ（`window_open` / `prog_end_seen` / `queued_valid`）のレベルで確認済み。追加された複雑性は Stay Set と Prog End にローカルである；コアの残りは変わらない。Tie C4-T4 から **Fixed C4-F10** へ昇格。
 
-**Note.** If (B) is adopted, the v1.1 Chapter 3 § 3.2 "Stay window" definition needs revision: the window opens when Stay Set is encountered, but the counter does not start until Prog End. The amanuensis flagged this for a future Chapter 3 revision.
+**Note.** Because (B) is now adopted (C4-F10), the Chapter 3 § 3.2 "Stay window" definition is revised accordingly in this v1.1 update: the window opens when Stay Set is encountered, but the stay counter does not begin counting until Prog End (or the Stay instruction, if no Prog End is present). See Chapter 3 v1.1 § 3.2.
 
-**注。** (B) が採用された場合、v1.1 第3章 § 3.2 の「Stay ウィンドウ」定義は改訂を必要とする: ウィンドウは Stay Set が遭遇された時に開くが、カウンタは Prog End まで開始しない。祐筆は将来の第3章改訂のためにこれを印付けた。
+**注。** (B) が採用された（C4-F10）ため、第3章 § 3.2 の「Stay ウィンドウ」定義は本 v1.1 アップデートで相応に改訂される: ウィンドウは Stay Set が遭遇された時に開くが、ステイカウンタは Prog End まで（Prog End が無ければ Stay 命令まで）カウントを開始しない。第3章 v1.1 § 3.2 参照。
 
 ---
 
@@ -351,20 +414,23 @@ Following the established classification: **Fixed (F)** = architectural commitme
 | **C4-F5** | Indirect Jump (Jump operand 0): Core asserts indirect-read request with purpose code, captures 12-bit target from external, jumps to absolute target / 間接 Jump(Jump オペランド 0): コアは目的コード付きの間接読み要求をアサートし、外部から 12 ビットターゲットを捕捉し、絶対ターゲットにジャンプする | **F** |
 | **C4-F6** | Indirect Loop target (Loop with D16-D31 = 0): Core asserts indirect-read request with purpose code, captures 12-bit target count from external, uses as up-count comparison target / 間接 Loop 目標(D16-D31 = 0 の Loop): コアは目的コード付きの間接読み要求をアサートし、外部から 12 ビットターゲットカウントを捕捉し、アップカウント比較目標として使う | **F** |
 | **C4-F7** | Indirect-read bus protocol signals: indirect_req (Core→External, 1-bit), indirect_purpose (Core→External, 2-bit), indirect_data (External→Core, 12-bit), indirect_ready (External→Core, 1-bit) / 間接読みバスプロトコル信号: indirect_req、indirect_purpose、indirect_data、indirect_ready | **F** |
+| **C4-F8** (v1.1) | **Foreground commands are prescaled:** a foreground command (NOP, Jump, Branch taken, control-flow Globals) advances on the next prescaler tick, consuming one whole prescale unit (not one system clock). Supersedes the v1.0 "1 system clock" reading and resolves C2-T4 in the prescaled direction. Silicon-confirmed (`prescaler_phase_measurement`). / **前景コマンドはプリスケールド実行される:** 前景コマンドは次のプリスケーラ・ティックで進み、丸ごと 1 プリスケール単位を消費する（1 システムクロックではない）。v1.0 の「1 システムクロック」を置き換え、C2-T4 をプリスケールド方向で解決。実機確認済み。 | **F** (v1.1) |
+| **C4-F9** (v1.1) | **Free-running prescaler, structurally phase-locked.** The prescaler counter is reset only by the global hardware reset — never on wait entry, never by the program Reset command. Because C4-F8 makes every loop an integer multiple of the prescale period, the prescaler re-enters every wait at the same phase; phase is structurally locked, first-tick delay is invariant, no phase-dependent jitter, no per-wait alignment hardware. Resolves audit hypothesis A2 (rejected). Prerequisite for external master/slave sync. Silicon-confirmed. / **自由走行プリスケーラ、構造的位相ロック。** プリスケーラカウンタはグローバルハードウェアリセットでのみリセットされる——待機突入でも、プログラム Reset コマンドでも決してされない。C4-F8 が全ループをプリスケール周期の整数倍にするため、毎回同一位相で待機に再突入する；位相は構造的にロック、初回ティック遅延は不変、位相依存ジッタなし、待機ごと整列ハードウェアなし。監査仮説 A2 を解決（棄却）。外部マスター／スレーブ同期の前提。実機確認済み。 | **F** (v1.1) |
+| **C4-F10** (v1.1) | **Stay Set role = clear/sync-only** (was Tie C4-T4 / C3-T11). Stay Set resets and arms the stay counter; the count begins at Prog End (or the Stay instruction if no Prog End). Eliminates background-program-length jitter — the wait equals the Stay operand (in prescale ticks) plus fixed startup latency, independent of background-program length. Silicon-confirmed via duty idiom D. Requires the Chapter 3 § 3.2 Stay-window definition revision (done in v1.1). / **Stay Set 役割 = クリア／同期のみ**（旧 Tie C4-T4 / C3-T11）。Stay Set はステイカウンタをリセットしアームする；カウントは Prog End（無ければ Stay 命令）で始まる。背景プログラム長ジッタを排除——待機は Stay オペランド（プリスケールティック）＋固定起動レイテンシに等しく、背景プログラム長から独立。流儀 D で実機確認済み。第3章 § 3.2 Stay ウィンドウ定義改訂を要する（v1.1 で実施）。 | **F** (v1.1, was Tie C4-T4) |
 | **C4-V1** | Indirect Loop target of 0 means "loop body executes 0 times" (counter=target on first iteration under up-count), matching for(i=0;i<0;i++) semantic / 間接 Loop 目標 0 は「ループ本体は 0 回実行される」を意味する(アップカウントの下で最初の反復でカウンタ=目標)、for(i=0;i<0;i++) 意味論と一致 | **V** |
 | **C4-V2** | Indirect-read uses a shared bus distinguished by indirect_purpose code; per-purpose buses are an alternative Formation may choose / 間接読みは indirect_purpose コードで区別される共有バスを使う；用途別バスは Formation が選択し得る代替案 | **V** |
+| **C4-V3** (v1.1) | **State-0 NOP cold-start convention.** Because the prescaler is free-running (C4-F9), the first state after global reset has indeterminate length (≤1 prescale period). Recommended: a foreground NOP at state 0 as an isolation container absorbing this one-time indeterminacy; from state 1 every Stay is exact. Use NOP (not Stay 1) so Stay's "exactly N units" guarantee is never stained. The state-0 NOP may optionally raise a timing_signal to externally mark the startup region. No hardware special-casing; a programming convention (triple role: foreground execution / isolation container / external marker). / **state-0 NOP 冷態起動慣習。** プリスケーラが自由走行（C4-F9）ゆえ、グローバルリセット後の最初のステートは長さが不定（≤1 プリスケール周期）。推奨: state 0 に前景 NOP を隔離容器として置きこの一度きりの不定性を吸収；state 1 から全 Stay は正確。NOP を使う（Stay 1 でなく）ことで Stay の「ちょうど N 単位」保証を汚さない。state-0 NOP は任意で timing_signal を立て起動区間を外部標示できる。ハードウェア特別扱いなし；プログラミング慣習（三重役割: 前景実行／隔離容器／外部標示）。 | **V** (v1.1) |
 | **C4-T1** | Indirect-read handshake timing Tie: (A) combinational/zero-clock; (B) registered/one-clock; (C) variable/multi-clock. Contributor leans toward (B) / 間接読みハンドシェイクタイミング Tie: (A) 組み合わせ／ゼロクロック；(B) レジスタ付き／1クロック；(C) 可変／複数クロック。貢献者は (B) に傾く | **T** |
 | **C4-T2** | Prescaler configuration Tie (Chapter 1 § 1.12, systematized here): (A) compile-time fixed; (B) runtime-configurable; (C) per-stay-selectable; (D) multiple-parallel. Contributor leans toward (A) for Core with (B) as Formation-level extension / プリスケーラ構成 Tie(第1章 § 1.12、ここで体系化): (A) 合成時固定；(B) 実行時設定可能；(C) ステイ毎選択可能；(D) 複数並列。貢献者はコアには (A)、Formation レベル拡張として (B) に傾く | **T** |
-| **C4-T3** | Prescale edge for queued execution Tie (was C3-T10): (A) leading edge throughout; (B) trailing edge throughout; (HYBRID) leading-edge match flag, trailing-edge action. Contributor leans toward HYBRID / キュー実行のプリスケール縁 Tie(旧 C3-T10): (A) 前縁全般；(B) 後縁全般；(ハイブリッド) 前縁一致フラグ、後縁アクション。貢献者はハイブリッドに傾く | **T** |
-| **C4-T4** | Stay Set role Tie (was C3-T11): (A) immediate start (v1.0 behavior, jitter-prone); (B) clear/sync-only (count starts at Prog End/Stay, jitter-free); (C) per-Stay-Set configurable. Contributor leans toward (B) / Stay Set 役割 Tie(旧 C3-T11): (A) 即時開始(v1.0 挙動、ジッタ起こりやすい)；(B) クリア／同期のみ(カウントは Prog End/Stay で開始、ジッタなし)；(C) Stay Set 毎に設定可能。貢献者は (B) に傾く | **T** |
+| **C4-T3** | Prescale **edge** for queued execution Tie (was C3-T10): (A) leading edge throughout; (B) trailing edge throughout; (HYBRID) leading-edge match flag, trailing-edge action. Contributor leans toward HYBRID. **Scope (v1.1):** this concerns only *where in the prescale period* a queued firing lands — NOT prescaler phase-alignment, which is resolved by C4-F9. (An earlier conformance-matrix note conflated the two.) / キュー実行のプリスケール**縁** Tie(旧 C3-T10): (A) 前縁全般；(B) 後縁全般；(ハイブリッド) 前縁一致フラグ、後縁アクション。貢献者はハイブリッドに傾く。**射程（v1.1）:** これはキュー発火がプリスケール周期の*どこに*乗るかのみを扱い、プリスケーラ位相整列は扱わない（それは C4-F9 が解決）。（以前の conformance-matrix 注記は両者を混同した。） | **T** |
 
-**Decision count by status:** Fixed (F): 7; Convention (V): 2; Tie (T): 4.
+**Decision count by status (v1.1):** Fixed (F): 10; Convention (V): 3; Tie (T): 3.
 
-**地位別決定数:** Fixed (F): 7；Convention (V): 2；Tie (T): 4.
+**地位別決定数（v1.1）:** Fixed (F): 10；Convention (V): 3；Tie (T): 3.
 
-Notable: two Ties (C4-T3, C4-T4) were inherited from Chapter 3 v1.1 (formerly C3-T10, C3-T11) and are now situated in their prescaler-coupled context. They remain Ties pending community input but with the contributor's analysis now articulated.
+Notable (v1.1): the two Ties inherited from Chapter 3 v1.1 (formerly C3-T10, C3-T11) have now diverged. C3-T11 (Stay Set role) is **resolved to Fixed C4-F10** on silicon evidence; C3-T10 (prescale edge) **remains Tie C4-T3**, with its scope clarified to the leading/trailing edge question only. Three new v1.1 Fixed/Convention items (C4-F8 foreground prescaling, C4-F9 free-running phase-lock, C4-V3 state-0 convention) record the Layer 4 verification results.
 
-注目すべき: 二つの Tie(C4-T3、C4-T4)は第3章 v1.1 から継承され(旧 C3-T10、C3-T11)、プリスケーラ結合の文脈に置かれた。コミュニティ入力を待つ Tie のままだが、貢献者の分析は今や明確化された。
+注目すべき（v1.1）: 第3章 v1.1 から継承された二つの Tie（旧 C3-T10、C3-T11）は分岐した。C3-T11（Stay Set 役割）は実機エビデンスで **Fixed C4-F10 へ解決**；C3-T10（プリスケール縁）は **Tie C4-T3 のまま**、射程を前縁／後縁の問いのみに明確化。三つの新規 v1.1 Fixed/Convention 項目（C4-F8 前景プリスケールド化、C4-F9 自由走行位相ロック、C4-V3 state-0 慣習）が Layer 4 検証結果を記録する。
 
 ---
 
