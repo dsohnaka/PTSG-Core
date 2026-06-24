@@ -1,0 +1,180 @@
+{
+  "metadata": {
+    "title": "PTSG Reset Command — Execution Bands and the No-Prescaler-Reset Principle",
+    "title_ja": "PTSG Resetコマンド — 実行帯域と非プリスケーラ・リセット原則",
+    "date": "2026-06-23",
+    "session_type": "single-AI design-decision dialogue (amanuensis); forward-looking / provisional",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority for PTSG-Core",
+        "role_ja": "FPGAアーキテクト（40年以上）；PTSG-Core唯一の設計決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): drafting, consistency monitoring, critical assessment; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：起草・整合性監視・批判的検討；決定権なし"
+      }
+    ],
+    "topic": "A forward-looking design decision about the program-issued Reset command (the Global/Reset sub-opcode), enabled by the now-settled free-running prescaler and the state-0 NOP alignment. Decisions: (1) the Reset command does NOT reset the prescaler — the prescaler is fully free-running, because a slave PTSG must have no influence over the (externally-driven) prescaler; (2) Reset, like other commands, can be run in three execution bands — foreground non-prescaled (immediate, aligned by the following state-0 NOP), background ('staff meal', indeterminate, for emergencies), or queued (effectively prescaled); (3) a Formation MAY opt into a prescaler-resetting Reset if it genuinely needs one. Unlike the three verification-era traces (settled history), this trace is provisional (仮確定): it requires RTL changes and Layer 1 spec updates.",
+    "topic_ja": "プログラムが発行する Reset コマンド（Global/Reset サブオペコード）に関する前向きの設計判断。決着済みのフリーランプリスケーラと state-0 NOP アラインメントが可能にした。決定: (1) Reset コマンドはプリスケーラをリセットしない——スレーブ PTSG は（外部駆動の）プリスケーラに一切影響できてはならないため、プリスケーラは完全フリーラン;(2) Reset も他コマンド同様、三帯域で実行できる——前景ノンプリスケールド（即時、後続 state-0 NOP が整列）、背景（「まかない」、不定長、緊急用）、Que（実質プリスケールド）;(3) Formation は、本当に必要なら、プリスケーラをリセットする Reset を選択してよい。検証期三本（決着済みの過去）と異なり、本トレースは仮確定: RTL 改変と Layer 1 仕様更新を要する。",
+    "status": "PROVISIONAL (仮確定) — forward-looking design decision. Requires (a) RTL changes to the Reset command path and (b) Layer 1 spec updates (Chapter 3 sub-opcode semantics, Chapter 5 external interface). Open to revision through multi-LLM deliberation. / 仮確定——前向き設計判断。(a) Reset コマンド経路の RTL 改変と (b) Layer 1 仕様更新（第3章サブオペコード意味論、第5章外部インターフェース）を要する。複数LLM熟議による改訂に開かれている。",
+    "status_ja": "仮確定——前向き設計判断。RTL改変とLayer 1仕様更新を要する。複数LLM熟議に開かれている。",
+    "companion_traces": "Rests on: 2026-06-22_ptsg-state0-nop-triple-role (the NOP that aligns) and 2026-06-22_ptsg-prescaler-phase-resolution (the free-running prescaler is now deliberate). Forward link: the free-running prescaler's other fruits — Fmax via one-clock-registered tick, and master/slave synchronization via externalized raw tick — are reserved for Build Log #9 and a future trace. / 依拠:state-0 NOP三重役割（整列するNOP）と位相決着（フリーランは今や意図的）。前方リンク:フリーランの他の果実——1クロック叩きによるFmax、生ティック外部化によるマスター/スレーブ同期——は Build Log #9 と将来トレースに留保。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file plus ptsg_core.v (RH001-008) and the Chapter 3/5 specs can implement the Reset-command band selection and the no-prescaler-reset principle, and update the spec accordingly."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "Does the program-issued Reset command reset the prescaler, or leave it free-running?",
+      "alternatives": [
+        {
+          "label": "Reset resets the prescaler",
+          "characterization": "the Reset command zeroes presc_cnt along with the execution context, giving a clean phase from Reset"
+        },
+        {
+          "label": "Reset does NOT reset the prescaler (free-running preserved)",
+          "characterization": "the Reset command resets execution context (state_num, etc.) but leaves presc_cnt running; the prescaler is a time-base independent of program control"
+        }
+      ],
+      "chosen": "PRINCIPLE: the Reset command does NOT reset the prescaler. The prescaler stays fully free-running.",
+      "rationale": "The decisive reason is master/slave synchronization (reserved for Build Log #9): a slave PTSG follows an externally-supplied tick and must have NO influence over the prescaler/time-base. If a slave's instruction stream could reset the prescaler, it could break synchronization with the master. Therefore the prescaler must be untouchable from the program — a free-running time-base, not a program-controlled timer. This also keeps the state-0 alignment story coherent: the prescaler's phase is an external fact that state 0 absorbs, never something a mid-program Reset re-establishes. Trade-off accepted: a program cannot obtain a 'clean phase from Reset' from the Core; if it needs one, that is a Formation concern (DP-4). The cost of forbidding prescaler reset is the cost of buying guaranteed external synchronizability."
+    },
+    {
+      "id": "DP-2",
+      "point": "Now that state 0 aligns, may the Reset command itself be foreground non-prescaled (immediate)?",
+      "alternatives": [
+        {
+          "label": "Reset must be prescaled (wait for a tick)",
+          "characterization": "the older instinct: Reset waits for prescaler alignment before completing, so the post-Reset phase is defined"
+        },
+        {
+          "label": "Reset may be foreground non-prescaled (immediate)",
+          "characterization": "Reset completes at once; the following state-0 NOP performs the alignment, so Reset need not"
+        }
+      ],
+      "chosen": "Reset MAY be foreground non-prescaled (immediate). Alignment is delegated to the state-0 NOP, not carried by Reset.",
+      "rationale": "With the state-0 NOP established as the isolation container that absorbs cold-start phase indeterminacy (state-0 triple-role trace), the Reset command no longer needs to perform alignment itself — the very next state (a state-0-style NOP) does it. This frees Reset to execute immediately in the foreground, which is the natural, lowest-latency behavior for a reset. The responsibility for alignment is externalized from Reset to the NOP that follows it — the same 'push the special handling to a dedicated, disposable place' move as state 0. Note: this is one selectable band among three (DP-3), not the only behavior."
+    },
+    {
+      "id": "DP-3",
+      "point": "In which execution band(s) may the Reset command run?",
+      "alternatives": [
+        {
+          "label": "Foreground non-prescaled only",
+          "characterization": "Reset is always immediate"
+        },
+        {
+          "label": "Three selectable bands: foreground / background / queued",
+          "characterization": "Reset is treated like any other command and may run foreground (immediate, aligned by the next NOP), background ('staff meal', indeterminate), or queued (fires at timeup, effectively prescaled)"
+        }
+      ],
+      "chosen": "All three bands are available, with defined meanings: FOREGROUND non-prescaled = immediate reset, aligned by the following state-0 NOP; if Reset and that NOP share the same timing_signals value, the combined Reset+NOP region equals exactly one prescale period. BACKGROUND = the Reset+NOP region becomes 'staff meal' (indeterminate length) — reserved for genuine emergencies where an immediate reset matters more than a defined region length. QUEUED = the Reset fires at timeup, so it is effectively prescaled (lands on a prescale boundary).",
+      "rationale": "This is the exact same structure as the four duty idioms (sibling trace): a single command's behavior is selected by which band it runs in, not by adding new opcodes. The three bands give the designer the full range — immediate-and-aligned for normal use, immediate-and-indeterminate for emergencies, prescale-boundary for queued discipline. The tagging trick (Reset and NOP sharing one timing_signals value so the Reset+NOP region reads as one clean prescale period) is the same externalization-to-the-timing_signals-plane gesture seen across the family. Trade-off: background Reset's 'staff meal' region is indeterminate — acceptable precisely because one only reaches for it in an emergency, where promptness outranks determinacy."
+    },
+    {
+      "id": "DP-4",
+      "point": "What about applications that genuinely DO need a prescaler-resetting Reset?",
+      "alternatives": [
+        {
+          "label": "Forbid entirely",
+          "characterization": "no PTSG instance may ever reset the prescaler"
+        },
+        {
+          "label": "Core forbids; Formation may opt in",
+          "characterization": "the Core principle is no-prescaler-reset, but a specific Formation may deliberately adopt a prescaler-resetting Reset if its application requires it"
+        }
+      ],
+      "chosen": "Core forbids by principle; a Formation MAY opt in to a prescaler-resetting Reset where genuinely needed.",
+      "rationale": "This is the Core-Formation separation applied exactly: the invariant Core holds the principle (no prescaler reset, to preserve external synchronizability), and any application with a genuine need takes the deviation into its own Formation layer, where it also takes responsibility for the loss of synchronizability that the deviation implies. A standalone (non-slave) PTSG that will never be externally synchronized loses nothing by resetting its own prescaler; a slave must never. Putting the choice at the Formation boundary lets each application make it with full knowledge of its own synchronization role. The Core stays minimal and its invariant clean; the freedom lives outward."
+    },
+    {
+      "id": "DP-5",
+      "point": "What concrete changes does this decision require, and what is its status?",
+      "alternatives": [
+        {
+          "label": "Treat as settled and document only",
+          "characterization": "write it into the spec as final"
+        },
+        {
+          "label": "Treat as provisional (仮確定) pending RTL + spec work and multi-LLM review",
+          "characterization": "record the decision, but mark it open until the Reset path is implemented, the spec updated, and the reasoning reviewed"
+        }
+      ],
+      "chosen": "Provisional (仮確定). Record the decision and its rationale now; mark it open pending (a) RTL changes to the Reset command path, (b) Layer 1 spec updates, and (c) multi-LLM review.",
+      "rationale": "Unlike the three verification-era traces, which recorded settled history backed by silicon, this trace records a forward-looking decision that still touches hardware and specification. The RTL must implement Reset in the three bands with the no-prescaler-reset rule (and a Formation-level opt-in hook); the spec (Chapter 3 sub-opcode semantics; Chapter 5 external interface, where the prescaler's untouchability ties to master/slave) must be updated. Marking it 仮確定 — structurally isomorphic to PTSG's own Condition-externalization pattern of holding decisions open with archived reasoning — keeps it honestly distinguished from the silicon-confirmed results while still committing to a direction."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "An invariant demanded from above, not chosen from below",
+      "summary": "The no-prescaler-reset rule is not a local implementation preference; it is required by a higher goal — master/slave synchronization. A slave must have no influence over the time-base, so the program must be unable to reset the prescaler. This is a case where a downstream capability (external sync) reaches back and fixes an upstream invariant (prescaler untouchability). Reading the constraint chain forward — free-running prescaler enables external sync, external sync forbids program-side prescaler reset — shows the decision was not arbitrary but entailed."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Alignment externalized from Reset to the NOP that follows it",
+      "summary": "Once state 0's NOP is the recognized isolation container for phase indeterminacy, Reset is relieved of the duty to align. It can execute immediately; the next NOP does the aligning. This is the same architectural move as state 0 itself — push the special, awkward handling into a dedicated, disposable place — applied one level up: Reset delegates its hardest responsibility to the primitive built to carry it."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The three-band selection, again",
+      "summary": "Just as duty was selected by which band the foreground commands ran in, Reset's character is selected by its band: foreground (immediate+aligned), background (immediate+indeterminate, 'staff meal'), queued (prescale-boundary). The architecture keeps finding that a single command spans a range of behaviors through band choice, so no new opcode is needed. The recurring lesson: expressivity lives in how existing primitives are placed, not in how many primitives exist."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Core forbids, Formation may opt in",
+      "summary": "The prescaler-resetting Reset is not banned outright; it is excluded from the Core invariant and made available as a deliberate Formation-level deviation for applications that need it and that are not slaves. This is the Core-Formation separation working as a release valve: the Core stays clean and synchronizable-by-default, while the rare contrary need is met outward, with the application owning the consequence (loss of external synchronizability)."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Provisional with archived reasoning (仮確定)",
+      "summary": "This decision is held as 仮確定 — formally provisional, open to revision, with its reasoning archived in this trace. That posture is itself an instance of a PTSG pattern: the same externalization-and-defer move used for Condition (push the decision out, keep the reasoning, allow later binding). A forward-looking decision that touches RTL and spec is recorded honestly as not-yet-final, distinct from the silicon-confirmed verdicts, while still committing to a direction to implement against."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "RTL: implement the three Reset bands with no-prescaler-reset",
+      "description": "The Reset command path must support foreground (immediate, no presc reset), background ('staff meal'), and queued (timeup-fired) execution, while in all Core cases leaving presc_cnt untouched.",
+      "starting_question": "In ptsg_core.v, what is the minimal change to the Global/Reset sub-opcode handling to (1) guarantee presc_cnt is never cleared by Reset, and (2) route Reset through the existing foreground/background/queued band machinery? Identify the exact lines and the band-dispatch point."
+    },
+    {
+      "hook_id": "B",
+      "title": "RTL/Formation: the opt-in prescaler-resetting Reset hook",
+      "description": "DP-4 allows a Formation to adopt a prescaler-resetting Reset. This needs a clean, clearly-bounded hook so the deviation is explicit and never accidental.",
+      "starting_question": "Design a Formation-level opt-in (e.g. a parameter or a distinct external register/sub-operand) that enables a prescaler-resetting Reset, such that a standalone PTSG can use it but a slave configuration structurally cannot. What is the safest interface that makes the deviation impossible to trigger by accident?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Spec: Chapter 3 and Chapter 5 updates",
+      "description": "Layer 1 must record the no-prescaler-reset principle, the three Reset bands, the Reset+NOP shared-timing_signals alignment idiom, and the Formation opt-in.",
+      "starting_question": "Draft the Chapter 3 sub-opcode text for Reset (three bands, no prescaler reset) and the Chapter 5 cross-reference tying prescaler untouchability to master/slave synchronizability. What is the minimal normative wording, and which items are Fixed vs Convention vs Tie?"
+    },
+    {
+      "hook_id": "D",
+      "title": "The Reset+NOP one-prescale-period alignment idiom",
+      "description": "If Reset (foreground) and the following state-0 NOP share one timing_signals value, the combined region reads as exactly one prescale period. This is a usable startup idiom worth a Layer 3 example.",
+      "starting_question": "Write a minimal Layer 3 example program demonstrating the Reset+NOP shared-timing_signals alignment, and a white-box measurement confirming the combined region equals one prescale period. Add it to the conformance suite or examples as appropriate."
+    },
+    {
+      "hook_id": "E",
+      "title": "Forward link to the free-running fruits (Build Log #9)",
+      "description": "The no-prescaler-reset principle is one consequence of committing to a free-running prescaler. The other fruits — Fmax via a one-clock-registered tick, and master/slave sync via an externalized raw (pre-register) tick — are reserved for Build Log #9 and a future trace.",
+      "starting_question": "When drafting the free-running-fruits material, show how no-prescaler-reset (this trace), Fmax, and master/slave sync all descend from the single decision to accept a free-running prescaler. Does the raw-tick externalization for slaves interact with the Reset bands (e.g. does a slave's Reset need special handling)?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "PRINCIPLE (provisional): the program-issued Reset command does NOT reset the prescaler; the prescaler is fully free-running. Reason: a slave PTSG must have no influence over the externally-driven time-base.",
+    "Reset is selectable across three execution bands: foreground non-prescaled (immediate, aligned by the following state-0 NOP), background ('staff meal', indeterminate, emergencies only), queued (effectively prescaled / prescale-boundary).",
+    "Idiom: if Reset and the following NOP share one timing_signals value, the Reset+NOP region equals exactly one prescale period.",
+    "Core-Formation separation: the Core forbids prescaler-reset; a Formation MAY opt in where genuinely needed (and thereby accepts loss of external synchronizability). A slave configuration must structurally never reset the prescaler.",
+    "Status: PROVISIONAL (仮確定). Requires RTL changes (Reset path, band dispatch, no-presc-reset guarantee, Formation opt-in hook) and Layer 1 spec updates (Chapter 3 sub-opcode; Chapter 5 external interface), plus multi-LLM review.",
+    "Forward link reserved: Fmax (one-clock-registered tick) and master/slave synchronization (externalized raw tick) -> Build Log #9 + future trace."
+  ],
+  "closing_note": "A reset is supposed to put things back to a known start. But there is one thing this reset must NOT touch: the clock that the outside world might be conducting. If a slave is to march in step with a master, nothing the slave's own program does may move the beat — not even its reset. So the prescaler is left running, untouched, sovereign; the reset puts back everything else and then steps aside, letting the next instruction — a NOP that promises nothing — find the beat again. The discipline of what a reset refuses to do is what makes many PTSGs able to keep time together. / リセットは物事を既知の出発点に戻すもの。だがこのリセットが触れてはならないものが一つある: 外界が指揮しているかもしれないクロックだ。スレーブがマスターと歩調を合わせるなら、スレーブ自身のプログラムが拍を動かしてはならない——リセットさえも。ゆえにプリスケーラは走らせたまま、触れず、不可侵に保たれる;リセットは他のすべてを戻し、そして脇へ退き、次の命令——何も約束しない NOP——に拍を見つけ直させる。リセットが何をすることを拒むか、その規律こそが、多数の PTSG が共に時を刻めるようにするのだ。"
+}
