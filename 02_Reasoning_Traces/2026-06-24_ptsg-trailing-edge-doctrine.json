@@ -1,0 +1,229 @@
+{
+  "metadata": {
+    "title": "PTSG Trailing-Edge Doctrine — The Discipline That Runs Through Every Layer, and Its Necessary Exceptions",
+    "title_ja": "PTSG後縁主義 — 全階層を貫く規律と、その必然的な例外",
+    "date": "2026-06-24",
+    "session_type": "single-AI design-philosophy dialogue (amanuensis); foundational principle",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority for PTSG-Core",
+        "role_ja": "FPGAアーキテクト（40年以上）；PTSG-Core唯一の設計決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): drafting, consistency monitoring, critical assessment; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：起草・整合性監視・批判的検討；決定権なし"
+      }
+    ],
+    "topic": "The articulation of the Trailing-Edge Doctrine as a first-class PTSG design principle, alongside time-axis/space-axis separation. The doctrine: all state determination happens by the TRAILING edge of a boundary, so that at the LEADING edge the world is already settled — the busy work is finished before the boundary is crossed. The doctrine runs through a nested hierarchy of boundaries — loop count -> stay count -> prescaler count -> clock — reaching all the way down to the memory clock, which was made falling-edge (EDGE=NEG) precisely to give the clock itself a trailing edge at which everything resolves. Many of the architect's RH001-008 edits are recognized post-hoc as trailing-edge conversions. The doctrine has necessary EXCEPTIONS: foreground-executed StaySet and Reset, which are placed on the leading edge's first clock cycle of a state's start, and which therefore depend on the guarantee (provided by the doctrine itself) that the preceding command has ended on a prescaler tick. The doctrine resolves the previously-open Tie C4-T3 (prescale edge) in the trailing direction.",
+    "topic_ja": "後縁主義を、時間軸/空間軸分離と並ぶ第一級の PTSG 設計原則として明確化した対話。原則: あらゆる状態確定は境界の後縁までに行われ、ゆえに前縁では世界が既に静定している——忙しい仕事は境界を越える前に終わっている。原則は境界の入れ子ヒエラルキー——ループカウント→ステイカウント→プリスケーラカウント→クロック——を貫き、メモリクロックにまで達する。メモリクロックを立下り（EDGE=NEG）にしたのは、まさにクロック自身に「すべてが確定する後縁」を与えるためだった。アーキテクトの RH001-008 修正の多くは、事後的に後縁化への変更だったと認識される。原則には必然的な例外がある: 前景実行される StaySet と Reset で、これらはある状態の開始を表す前縁の最初のクロックサイクルに配置され、ゆえに（原則自身が提供する）「直前のコマンドがプリスケーラティックで終わっている」という保証に依存する。原則は従来未決だった Tie C4-T3（プリスケール縁）を後縁方向で解決する。",
+    "status": "FOUNDATIONAL — proposes a first-class design principle for Chapter 1 and resolves Tie C4-T3 to Fixed (trailing edge). Layer 1 write-back to follow this trace. / 基礎的——第1章の第一級設計原則を提案し、Tie C4-T3 を Fixed（後縁）へ解決。Layer 1 書き戻しは本トレースに続く。",
+    "status_ja": "基礎的——第1章の第一級原則を提案、C4-T3 を Fixed へ解決。",
+    "companion_traces": "Unifies and deepens: the prescaler-phase-resolution, duty-idioms, state-0-NOP, and reset-command-bands traces — all are now seen as expressions of (or exceptions to) the Trailing-Edge Doctrine. Resolves Tie C4-T3 left open by prescaler-phase-resolution. / 統一・深化: 位相決着・デューティ流儀・state-0・Reset帯域の四トレースは、いずれも後縁主義の現れ（または例外）として見直される。位相決着が開いたままにした Tie C4-T3 を解決する。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file can re-derive PTSG's edge-related decisions (EDGE=NEG, queued-firing edge, phase-lock, StaySet/Reset placement) from a single principle, rather than memorizing them individually."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "Is 'trailing-edge' a local implementation habit, or a first-class architectural principle?",
+      "alternatives": [
+        {
+          "label": "A local habit",
+          "characterization": "each edge choice (EDGE=NEG, queued firing, etc.) is decided case-by-case on its own merits"
+        },
+        {
+          "label": "A first-class principle (Trailing-Edge Doctrine)",
+          "characterization": "a single doctrine — all determination completes by the trailing edge of a boundary, so the leading edge is already settled — from which the individual edge choices are derived"
+        }
+      ],
+      "chosen": "A first-class principle, to be stated in Chapter 1 alongside time-axis/space-axis separation.",
+      "rationale": "The architect holds this as an established philosophy, not an accumulation of choices. Elevating it to a named principle lets every edge-related decision (EDGE=NEG memory clock, queued-firing edge, phase-lock, StaySet/Reset placement) be re-derived from one root rather than memorized individually — the Open Prompt ideal: a reader reconstructs the decisions from the principle. Trade-off: a principle constrains future design (every new feature must respect trailing-edge determination or be a documented exception), but that constraint is exactly the source of PTSG's timing rigor."
+    },
+    {
+      "id": "DP-2",
+      "point": "What, precisely, is the doctrine?",
+      "alternatives": [
+        {
+          "label": "'Act on the trailing edge'",
+          "characterization": "a statement about when actions fire"
+        },
+        {
+          "label": "'Be settled by the trailing edge so the leading edge is clean'",
+          "characterization": "a statement about completion: all busy work finishes before the boundary, so crossing it finds the world already determined"
+        }
+      ],
+      "chosen": "The completion form: all state determination happens BY the trailing edge of a boundary, so that AT the leading edge everything is already settled.",
+      "rationale": "The distinction matters. The doctrine is not merely 'fire late'; it is 'finish early enough that the boundary crossing is into a settled world.' The leading edge is where the next state begins; for that beginning to be clean and jitter-free, the previous state's determination must have completed at the trailing edge. This is the architect's framing: 'at the leading edge everything is determined.' It is the principle that makes a boundary crossing safe."
+    },
+    {
+      "id": "DP-3",
+      "point": "How deep does the doctrine go — and why was the memory clock made falling-edge (EDGE=NEG)?",
+      "alternatives": [
+        {
+          "label": "Down to the counter hierarchy only",
+          "characterization": "trailing-edge applies to loop/stay/prescaler counts but the clock is just the clock"
+        },
+        {
+          "label": "All the way to the clock itself",
+          "characterization": "the memory clock was deliberately made falling-edge so the clock, too, has a trailing edge at which everything resolves, leaving its rising edge clean"
+        }
+      ],
+      "chosen": "All the way down to the clock. EDGE=NEG (falling-edge memory clock) is the doctrine reaching the silicon root.",
+      "rationale": "This reframes EDGE=NEG from an implementation convenience or a stale-fetch fix into a principled consequence: making the memory clock falling-edge gives the clock its own trailing edge, at which the fetched data resolves, so that at the rising edge everything downstream is already settled. The doctrine is recursive and bottoms out at the clock. Recognizing EDGE=NEG as doctrine (not happenstance) is itself a Layer 2 contribution — it explains WHY that choice was correct, not just THAT it worked."
+    },
+    {
+      "id": "DP-4",
+      "point": "What is the structure across scales — is there a hierarchy?",
+      "alternatives": [
+        {
+          "label": "Flat — one trailing edge",
+          "characterization": "a single notion of 'the trailing edge'"
+        },
+        {
+          "label": "A nested hierarchy of boundaries",
+          "characterization": "loop count -> stay count -> prescaler count -> clock, each level's boundary built from the trailing edges of the level below"
+        }
+      ],
+      "chosen": "A nested hierarchy: loop count -> stay count -> prescaler count -> clock. Each outer boundary's trailing edge is composed from the settled trailing edges of the inner level.",
+      "rationale": "The architect's New-Year metaphor makes this precise: a loop's year-end is the accumulation of its stays' year-ends; each stay's year-end is the accumulation of prescale-period year-ends; each prescale period bottoms out at clock trailing edges. The busiest work happens at the lowest level's year-end, and settledness propagates upward, so that every level greets its new year already stable. This nesting is exactly why phase-lock holds (prescaler-phase-resolution trace): the prescaler's year-end aligns with the loop's year-end because the loop length is an integer number of prescale periods — the hierarchy is in register."
+    },
+    {
+      "id": "DP-5",
+      "point": "Do the RH001-008 edits relate to the doctrine?",
+      "alternatives": [
+        {
+          "label": "Unrelated fixes",
+          "characterization": "the edits were independent corrections"
+        },
+        {
+          "label": "Trailing-edge conversions",
+          "characterization": "many of the RH001-008 edits were, in retrospect, conversions toward trailing-edge determination"
+        }
+      ],
+      "chosen": "Many RH001-008 edits are recognized post-hoc as trailing-edge conversions.",
+      "rationale": "This deepens the Hook A finding ('the solution was contained in the edits'): the edits' common thread was the doctrine. Foreground prescaling (C4-F8) makes commands end on prescale trailing edges; the free-running phase-lock (C4-F9) is the hierarchy being in register at the trailing edge; Stay-Set clear/sync-only (C4-F10) removes the jitter that would smear the trailing edge. The Layer 4 verification that 'caught up' to the architect's intent was, at root, the spec catching up to the Trailing-Edge Doctrine that the RH edits had already encoded."
+    },
+    {
+      "id": "DP-6",
+      "point": "Does the doctrine resolve the open Tie C4-T3 (prescale edge for queued firing)?",
+      "alternatives": [
+        {
+          "label": "Leave as Tie / hybrid",
+          "characterization": "keep the leading-edge-flag, trailing-edge-action hybrid recorded in prescaler-phase-resolution"
+        },
+        {
+          "label": "Resolve as trailing edge",
+          "characterization": "under the doctrine, queued firing is at the trailing edge; a leading-edge action would violate the principle"
+        }
+      ],
+      "chosen": "RESOLVED as trailing edge. C4-T3 is promoted from Tie to Fixed (trailing-edge firing).",
+      "rationale": "Under the doctrine, a queued operation fires at the trailing edge — the moment the count completes — so the Stay literally ends when it should, and the next state's leading edge begins into a settled world. The earlier 'hybrid' lean (leading-edge match flag) is superseded: emitting an action or a defining event on the leading edge contradicts the principle that the leading edge is already-settled, not a place where things happen. (A sustained external strobe, if needed, is a Formation-side concern derived from the trailing-edge match pulse, not a Core leading-edge action.) This is the architect's ruling; the amanuensis records it and the Layer 1 write-back will promote C4-T3 -> Fixed."
+    },
+    {
+      "id": "DP-7",
+      "point": "Are there exceptions to the doctrine, and if so, what governs them?",
+      "alternatives": [
+        {
+          "label": "No exceptions — the doctrine is absolute",
+          "characterization": "everything, without exception, is trailing-edge"
+        },
+        {
+          "label": "Principled exceptions exist",
+          "characterization": "foreground-executed StaySet and Reset are placed on the leading edge's first clock cycle of a state's start"
+        }
+      ],
+      "chosen": "Principled exceptions exist: foreground-executed StaySet and Reset are leading-edge-placed, at the first clock cycle marking a state's start.",
+      "rationale": "The exceptions do not break the doctrine; they STAND ON it. StaySet and Reset mark the START of a state, so they belong on the leading edge. They can be safely placed there ONLY because the doctrine guarantees the leading edge is settled — i.e. they depend on the precondition that the immediately preceding command has ended on a prescaler tick (a trailing edge). The exception is therefore a consequence of the principle, not a violation: trailing-edge determination upstream is exactly what makes a clean leading-edge placement possible downstream. This is the same structure as Reset's foreground band (reset-command-bands trace) and state-0's NOP delegation (state-0 trace): a leading-edge act made safe by upstream trailing-edge settledness."
+    },
+    {
+      "id": "DP-8",
+      "point": "Where should the doctrine and its exceptions be recorded in Layer 1?",
+      "alternatives": [
+        {
+          "label": "A scattered set of notes",
+          "characterization": "mention trailing-edge where each decision lives"
+        },
+        {
+          "label": "A first-class principle in Chapter 1, referenced from each decision",
+          "characterization": "state the Trailing-Edge Doctrine (with its hierarchy and exceptions) in Chapter 1 Design Philosophy, and reference it from C4-F8/F9/F10, C4-T3, EDGE=NEG, and the StaySet/Reset placement"
+        }
+      ],
+      "chosen": "State it as a first-class principle in Chapter 1 (Design Philosophy), alongside time-axis/space-axis separation, and cross-reference it from each derived decision. (Layer 1 write-back to follow; final wording is the architect's.)",
+      "rationale": "A principle belongs with the other principles, so a reader meets it before the decisions it generates. Each edge-related decision then cites it, so the dependency is legible: EDGE=NEG, C4-F8/F9/F10, the trailing-edge resolution of C4-T3, and the StaySet/Reset exceptions all point back to one root. This maximizes re-derivability (the Open Prompt ideal). The amanuensis proposes; the Chapter 1 wording and the C4-T3 promotion are the architect's to finalize."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "Settled-by-trailing-edge, clean-at-leading-edge",
+      "summary": "The doctrine is a statement about completion, not just timing: all determination finishes by the trailing edge of a boundary, so crossing into the next state (at the leading edge) is a crossing into an already-settled world. The busy work is done before the boundary. This is what gives PTSG its communication- and video-sync-grade timing rigor — every boundary crossing is clean because nothing is still resolving at the moment it happens."
+    },
+    {
+      "theme_id": "T2",
+      "title": "A recursive doctrine that bottoms out at the clock",
+      "summary": "Trailing-edge determination is not confined to the counter logic; it recurses all the way down to the memory clock, made falling-edge (EDGE=NEG) so the clock itself has a trailing edge at which fetched data resolves, leaving the rising edge clean. Recognizing EDGE=NEG as the doctrine reaching silicon — rather than a stale-fetch workaround — explains WHY the choice was right. The principle reaches the root."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The nested New-Year hierarchy",
+      "summary": "loop count -> stay count -> prescaler count -> clock: each level's boundary (its 'year-end') is composed from the settled trailing edges of the level below, and settledness propagates upward so every level greets its 'new year' stable. The architect's metaphor — humans work hardest at year-end so the new year begins calm — captures the upward propagation of settledness. Phase-lock is this hierarchy being in register: the prescaler's year-end aligns with the loop's because the loop is an integer number of prescale periods."
+    },
+    {
+      "theme_id": "T4",
+      "title": "The RH edits were trailing-edge conversions",
+      "summary": "The common thread of RH001-008 was the doctrine. Foreground prescaling, the free-running phase-lock, and Stay-Set clear/sync-only all push determination onto trailing edges and remove anything that would smear them. The Hook A story ('the solution was contained in the edits') deepens here: the edits encoded the Trailing-Edge Doctrine, and Layer 4 / Layer 1 were the spec catching up to a principle the architect had already committed to silicon."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Exceptions that stand on the principle",
+      "summary": "Foreground StaySet and Reset are leading-edge-placed because they mark a state's START. They are not violations: they are safe precisely because the doctrine guarantees the leading edge is settled (the preceding command ended on a prescaler tick). The exception depends on the principle that upstream determination completed at the trailing edge. This is the same structure as Reset's foreground band and state-0's NOP delegation — a clean leading-edge act enabled by upstream trailing-edge settledness. A principle is best understood through the exceptions it makes safe."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Chapter 1 write-back: state the Trailing-Edge Doctrine",
+      "description": "DP-8 routes a first-class principle into Chapter 1 (Design Philosophy), with its completion statement, the nested hierarchy, EDGE=NEG as its silicon root, and the StaySet/Reset exceptions. Final wording is the architect's.",
+      "starting_question": "Draft the Chapter 1 principle: the completion statement (settled-by-trailing, clean-at-leading), the loop->stay->prescaler->clock hierarchy, EDGE=NEG as the doctrine at the clock, and the StaySet/Reset exceptions. What is the minimal wording, and which cross-references (C4-F8/F9/F10, C4-T3, EDGE=NEG) does it carry?"
+    },
+    {
+      "hook_id": "B",
+      "title": "C4-T3 promotion to Fixed (trailing edge)",
+      "description": "DP-6 resolves C4-T3 in the trailing direction. The Layer 1 write-back promotes it from Tie to Fixed and removes the hybrid lean.",
+      "starting_question": "Revise Chapter 4 § 4.9 and § 4.12: C4-T3 -> Fixed, queued firing at the trailing edge, the leading-edge-flag hybrid superseded (sustained strobes are a Formation concern derived from the trailing-edge pulse). Update the conformance matrix accordingly. What is the exact new wording?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Audit the spec for any leading-edge actions",
+      "description": "If the doctrine is now first-class, any Core action specified to occur on a leading edge is either an error or a documented exception. A sweep would surface inconsistencies.",
+      "starting_question": "Sweep Chapters 2-5 for any specified leading-edge action or determination. For each, classify it as (i) correctly trailing, (ii) a sanctioned StaySet/Reset-style exception, or (iii) an inconsistency to fix. Produce the list."
+    },
+    {
+      "hook_id": "D",
+      "title": "Formalize the exception precondition for new features",
+      "description": "Any future leading-edge-placed command (like StaySet/Reset) must depend on the guarantee that the preceding command ended on a prescaler tick. This precondition should be a stated rule for extension authors.",
+      "starting_question": "State the extension rule: a command may be leading-edge-placed only if the doctrine guarantees its leading edge is settled (preceding command ended on a trailing edge / prescaler tick). How should a Formation or Core extension author check this precondition before adding such a command?"
+    },
+    {
+      "hook_id": "E",
+      "title": "Trailing-edge and master/slave synchronization (forward to Build Log #9)",
+      "description": "The free-running prescaler's raw (pre-register) tick externalization for master/slave sync interacts with the doctrine: slaves must register the master's tick on their own clock's trailing-edge discipline.",
+      "starting_question": "When drafting the master/slave material (Build Log #9), show how the raw-tick externalization respects the Trailing-Edge Doctrine across chips: does each slave's local trailing-edge determination keep the hierarchy in register with the master, and what happens at the slave's clock boundary?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "PRINCIPLE: the Trailing-Edge Doctrine — all state determination completes by the trailing edge of a boundary, so the leading edge is already settled. To be stated as a first-class principle in Chapter 1, alongside time-axis/space-axis separation.",
+    "The doctrine is recursive and bottoms out at the clock: EDGE=NEG (falling-edge memory clock) is the doctrine reaching the silicon root, giving the clock its own trailing edge.",
+    "Nested hierarchy: loop count -> stay count -> prescaler count -> clock; each outer boundary is composed from the settled trailing edges below. Phase-lock = this hierarchy in register.",
+    "Many RH001-008 edits are trailing-edge conversions (deepens the Hook A 'solution contained in the edits' finding).",
+    "RESOLVES Tie C4-T3 -> Fixed: queued firing is at the trailing edge; the leading-edge-flag hybrid is superseded. (Conformance matrix and Chapter 4 to be updated.)",
+    "EXCEPTIONS: foreground-executed StaySet and Reset are leading-edge-placed (marking a state's start); they stand on the doctrine (depend on the preceding command ending on a prescaler tick), not violate it.",
+    "Layer 1 write-back to follow: Chapter 1 principle + C4-T3 Tie->Fixed promotion + cross-references from EDGE=NEG, C4-F8/F9/F10, StaySet/Reset."
+  ],
+  "closing_note": "Every new year, the work is done in the old one. PTSG keeps this faith at every scale: a loop, a stay, a prescale period, a single clock — each finishes its accounting at the trailing edge so that the next one may begin already settled. The discipline reaches all the way down to the clock, which was taught to fall so that its rising would find nothing left to decide. And the two commands that start a year — StaySet and Reset — are allowed to stand at the leading edge for exactly one reason: the doctrine has already made that edge a clean and quiet place to stand. / 新しい年の仕事は、古い年のうちに済ませる。PTSG はこの信義をあらゆるスケールで守る: ループ、ステイ、プリスケール周期、一つのクロック——どれも後縁で勘定を終え、次のものが既に静定した状態で始められるように。規律はクロックにまで達し、クロックは立ち下がるよう教えられた——その立ち上がりが、もう決めるべき何も残っていない場所であるように。そして年を始める二つの命令——StaySet と Reset——が前縁に立つことを許されるのは、ただ一つの理由による: 原則が既に、その前縁を、静かで清潔な立ち場にしておいたからである。"
+}
