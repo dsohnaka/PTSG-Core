@@ -7,7 +7,7 @@
 > Layer 4 の玄関口。すべての Layer 1 決定(Fixed / Convention / Tie)をその検証状態に対応づける。
 > 本表は**何が検証済みか**と**何が未検証か**の両方を一目で可視にする。
 
-**Last updated / 最終更新:** 2026-06-22 (Hook A closed — prescaler phase, silicon-confirmed) / (Hook A 完了 — プリスケーラ位相、実機確認済み)
+**Last updated / 最終更新:** 2026-06-24 (Hook A closed; Layer 1 v1.1 write-back; Trailing-Edge Doctrine; C4-T3 split → C4-F9 phase / C4-F11 edge) / (Hook A 完了；Layer 1 v1.1 書き戻し；後縁主義；C4-T3 分離)
 
 ## Legend / 凡例
 
@@ -84,8 +84,9 @@ top to bottom; #1 first to establish silicon trust, #2 as a quick win to settle 
 | C4-F5 | Indirect Jump (operand 0) | 🟡 sim | indirect-Jump TB (Build Log #5) |
 | C4-F6 | Indirect Loop target (D16–D31=0) | ⬜ | (note: queued-band indirect not supported — see ptsg_imem/audit) |
 | C4-T2 | Prescaler config (compile-time fixed chosen) | 🟢 silicon | PRESCALE param fixed at synthesis, working |
-| C4-T3 | Prescale edge / phase | 🟢 silicon | **Hook A PASS (A2 rejected)**: loop length = integer × prescale period ⇒ phase-locked, zero jitter; the lock is a structural consequence of RH001/006 (foreground prescaled). See `signaltap/DE10-nano/2026-06-22_prescaler_phase_measurement/observation.md` |
-| C4-T4 | Stay Set role (clear/sync-only, lean B) | 🟢 silicon | lean B in RTL; alignment AND phase-lock confirmed on silicon across 4 duty idioms (`prescaler_phase_measurement`) |
+| C4-F9 (was part of C4-T3) | Prescaler **phase** | 🟢 silicon | **Hook A PASS (A2 rejected)**: loop length = integer × prescale period ⇒ free-running prescaler is structurally phase-locked, zero jitter (RH001/006 foreground-prescaling). Now Fixed C4-F9 (Ch4 § 4.8a). See `signaltap/DE10-nano/2026-06-22_prescaler_phase_measurement/observation.md` |
+| C4-F11 (was C4-T3 *edge*) | Prescale **edge** (queued firing) | ⚪ doctrine | **RESOLVED to trailing edge** by the Trailing-Edge Doctrine (Layer 2 `2026-06-24_ptsg-trailing-edge-doctrine`; Ch1 § 1.4a, Ch4 § 4.9). Queued firing at the trailing edge; leading-edge-flag hybrid superseded. Not a silicon test item; resolved by principle. |
+| C4-F10 (was C4-T4) | Stay Set role (clear/sync-only) | 🟢 silicon | RESOLVED as (B); silicon-confirmed across 4 duty idioms incl. idiom D internal registers (`prescaler_phase_measurement`). Now Fixed C4-F10 (Ch4 § 4.9). |
 
 ## Chapter 5 — External Logic Interface / 外部ロジックインターフェース
 
@@ -106,7 +107,7 @@ top to bottom; #1 first to establish silicon trust, #2 as a quick win to settle 
 |---|---|---|---|
 | Queued band implements Loop only (C3-F2 partial) | Audit 2026-06-02 | confirmed in source | → #4 to characterize on silicon; then Layer 1 decision: complete impl vs formalize the simplification |
 | Base Set auto-save idempotency undefined (C3-F11) | Build Log #5 | spec ambiguity | → #5; candidate for Ch3 v1.2 |
-| ~~Aligned-fetch residual anomaly (prescaler phase)~~ **RESOLVED** | Build Log #6 | **PASS, silicon-confirmed (2026-06-22)** | not jitter — it was the 25:35 duty asymmetry of the naive program (foreground-prescaled NOP+Jump). Phase is locked. C4-T3 resolved. |
+| ~~Aligned-fetch residual anomaly (prescaler phase)~~ **RESOLVED** | Build Log #6 | **PASS, silicon-confirmed (2026-06-22)** | not jitter — it was the 25:35 duty asymmetry of the naive program (foreground-prescaled NOP+Jump). Phase is locked (C4-F9). The prescale-edge question is separately resolved to trailing by the Trailing-Edge Doctrine (C4-F11). |
 
 ---
 
@@ -117,6 +118,6 @@ Verification outcomes that should feed back into the specification:
 検証結果のうち仕様書に書き戻すべきもの:
 
 - **Memory timing model** (RD_LAT≥1; EDGE="NEG" half-cycle alignment as current Convention with its frequency ceiling; EDGE="POS"+fetch-stage high-clock alternative) → **C2-T4 and Chapter 5 §5.13**. *(Silicon-confirmed; ready to draft.)*
-- **Prescaler phase** → **C4-T3 RESOLVED (silicon-confirmed):** free-running counter, but the loop phase-locks because foreground-prescaling makes the loop an integer multiple of the prescale period. Document as Convention in Ch4, with the four duty idioms as the worked illustration. *(Ready to draft.)*
+- **Prescaler phase / edge** → **RESOLVED & written back (Layer 1 v1.1):** phase → Fixed **C4-F9** (free-running, structurally phase-locked); foreground-prescaling → Fixed **C4-F8**; Stay Set role → Fixed **C4-F10**; prescale edge → Fixed **C4-F11** (trailing, by the Trailing-Edge Doctrine, Ch1 § 1.4a); state-0 → Convention **C4-V3**; four duty idioms = Ch4 § 4.8a worked illustration. Reset bands → Ch3 § 3.4a (PROVISIONAL C3-F21/F22/V4). *(Written back.)*
 - **Base Set idempotency** (A/B/C alternatives) → **C3-F11 / Chapter 3 v1.2**, pending #5.
 - **Queued-band scope** (Loop-only vs all internal ops) → **C3-F2 / Chapter 3 v1.2**, pending #4.

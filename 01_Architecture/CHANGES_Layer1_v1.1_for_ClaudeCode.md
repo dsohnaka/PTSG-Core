@@ -27,6 +27,18 @@ and **does** require RTL work and is not yet silicon-verified.
 でなく**適合検証**である: RTL が今や明示的な仕様と一致することを確認せよ。より小さな集合が
 **PROVISIONAL（仮確定）**——Reset コマンド帯域モデル——と記され、これは RTL 作業を要し、まだシリコン未検証である。
 
+> **Organizing principle — the Trailing-Edge Doctrine (Chapter 1 § 1.4a, new in v1.1).** Most A-group
+> items are *derivations* of one principle: all state is determined by the **trailing edge** of every
+> boundary, so the leading edge is settled; this recurses to the clock (EDGE=NEG). For the Verilog
+> implementer this means a single sanity lens: **every determination should land on a trailing edge;
+> the only leading-edge-placed commands are foreground StaySet and Reset** (and those depend on the
+> preceding command ending on a prescaler tick). Reasoning: Layer 2 `2026-06-24_ptsg-trailing-edge-doctrine`.
+>
+> **統べる原則——後縁主義（第1章 § 1.4a、v1.1 新規）。** A 群の大半は一つの原則の*派生*である: 全状態は
+> あらゆる境界の**後縁**で確定し、前縁は静定する；これはクロック（EDGE=NEG）まで再帰する。Verilog 実装者には
+> これは単一の健全性レンズを意味する: **あらゆる確定は後縁に乗るべき;前縁に置かれる命令は前景 StaySet と
+> Reset のみ**（それらは直前のコマンドがプリスケーラティックで終わることに依存する）。
+
 ---
 
 ## A. Already implemented in RH001–RH008 — verify conformance / RH001–RH008 で実装済み — 適合検証
@@ -98,11 +110,12 @@ and **does** require RTL work and is not yet silicon-verified.
 
 ## D. Clarification / correction (no RTL) / 明確化・訂正（RTL なし）
 
-### D1 — C4-T3 scope corrected (remains a Tie) / C4-T3 射程の訂正（Tie のまま）
+### D1 — C4-F11: Queued firing at the trailing edge (was Tie C4-T3) / キュー発火は後縁（旧 Tie C4-T3）
 
-- **Chapter / 章:** Ch4 § 4.9, § 4.12; Ch3 table C3-T10→C4-T3.
-- **What changed / 変更点:** C4-T3 concerns **only** the leading-vs-trailing **edge** of a queued firing within the prescale period. It is **still an open Tie**. An earlier conformance-matrix note wrongly conflated it with the prescaler *phase* question (which is resolved by C4-F9). The spec now keeps the two distinct.
-- **RTL implication / RTL 含意:** **none yet** — C4-T3 remains open. The current RTL's match-flag edge behavior is whatever RH001–008 does; do not treat the edge as normatively fixed until C4-T3 is resolved.
+- **Chapter / 章:** Ch1 § 1.4a; Ch4 § 4.9, § 4.12; Ch3 table C3-T10→C4-F11; Ch5 § 5.10.
+- **Spec now says / 仕様の現記述:** a queued operation (and the `stay_cnt_match` pulse) fires at the **trailing edge** of the prescale period — the moment the count completes — by the Trailing-Edge Doctrine. The earlier leading-edge-flag hybrid is superseded; a sustained external strobe is a Formation concern derived from the trailing-edge pulse. (The separate prescaler *phase* question is resolved by C4-F9 — an earlier conformance-matrix note conflated the two.)
+- **Source / 出典:** Layer 2 `2026-06-24_ptsg-trailing-edge-doctrine`.
+- **RTL implication / RTL 含意:** **verify** that queued-operation firing and `stay_cnt_match` occur on the trailing edge of the prescale period (count-completion), not the leading edge. RH001–008's trailing-edge conversions likely already satisfy this; if any queued firing or match pulse is on a leading edge, change it to the trailing edge. Do **not** add a leading-edge defining action.
 
 ---
 
@@ -114,11 +127,12 @@ and **does** require RTL work and is not yet silicon-verified.
 | **C4-F9** | Ch4 §4.8a | Fixed (v1.1) | phase trace + L4 | verify (free-running, no wait-entry reset) |
 | **C4-F10** | Ch4 §4.9 | Fixed (v1.1, was C4-T4) | duty trace + L4 idiom D | verify (RH002–005) |
 | **C4-V3** | Ch4 §4.8a | Convention (v1.1) | state-0 trace | none (programming convention) |
+| **C1-D13** | Ch1 §1.4a | Principle (v1.1) | trailing-edge doctrine | organizing lens: all determination on trailing edge |
 | **C2-T4** | Ch2 | Resolved → C4-F8 | phase trace | (see C4-F8) |
 | **C3-F21** | Ch3 §3.4a | **Fixed (仮確定)** | reset trace | **ensure Reset never clears `presc_cnt`** |
 | **C3-F22** | Ch3 §3.4a | **Fixed (仮確定)** | reset trace | route Reset through band machinery |
 | **C3-V4** | Ch3 §3.4a | **Convention (仮確定)** | reset trace | optional Formation opt-in |
-| **C4-T3** | Ch4 §4.9 | **Tie (still open)** | — | none (do not fix the edge yet) |
+| **C4-F11** | Ch1 §1.4a / Ch4 §4.9 | Fixed (v1.1, was C4-T3) | trailing-edge doctrine | verify queued firing + match pulse are trailing-edge |
 
 ---
 
@@ -129,11 +143,11 @@ and **does** require RTL work and is not yet silicon-verified.
 2. **C3-F21 guarantee:** audit all `presc_cnt` reset paths; ensure the Reset *command* never clears it.
 3. **C3-F22:** route the Reset command through the foreground/background/queued band dispatch.
 4. **C3-V4:** only if requested — add a bounded Formation-level opt-in for a prescaler-resetting Reset.
-5. Leave **C4-T3** (queued-firing edge) as-is; it is an open Tie.
+5. **C4-F11** (was C4-T3): verify queued firing and the match pulse are on the **trailing edge** (count-completion); correct any leading-edge firing. Use the Trailing-Edge Doctrine as the global sanity lens.
 
 1. **適合パス（A1–A3）:** コミット済み RTL が前景プリスケールド化・待機突入非リセットの自由走行
    プリスケーラ・Stay Set クリア／同期のみを実装することを確認。逸脱は報告せよ。
 2. **C3-F21 保証:** すべての `presc_cnt` リセット経路を監査；Reset *コマンド*が決してそれをクリアしないこと。
 3. **C3-F22:** Reset コマンドを前景／背景／Que 帯域ディスパッチに通す。
 4. **C3-V4:** 要請があれば——プリスケーラをリセットする Reset の境界付き Formation opt-in を追加。
-5. **C4-T3**（キュー発火の縁）はそのまま——未決 Tie である。
+5. **C4-F11**（旧 C4-T3）: キュー発火と一致パルスが**後縁**（カウント完了）にあることを検証し、前縁発火があれば修正。後縁主義を全体の健全性レンズとして用いよ。

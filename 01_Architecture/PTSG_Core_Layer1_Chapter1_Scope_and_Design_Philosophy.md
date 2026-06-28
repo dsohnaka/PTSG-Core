@@ -128,6 +128,34 @@ A specification gains precision by stating what it is *not*. The following are d
 
 ---
 
+## 1.4a Design Philosophy — The Trailing-Edge Doctrine / 設計哲学 — 後縁主義
+
+**The principle.** PTSG determines all state **by the trailing edge** of every boundary, so that **at the leading edge** of the next state the world is already settled. The busy work — counting, comparing, deciding — is finished before a boundary is crossed; crossing it is a crossing into a determined, quiet world. This is not merely "act late"; it is "finish early enough that nothing is still resolving at the moment of transition." **It is the discipline that gives PTSG timing rigor of communication- and video-synchronization grade, where a stated count must equal the cycles on the wire and a boundary must be clean.**
+
+**原理。** PTSGはあらゆる境界の**後縁までに**すべての状態を確定し、ゆえに次状態の**前縁では**世界が既に静定している。忙しい仕事——数える・比べる・決める——は境界を越える前に終わっている；越境は、確定した静かな世界への越境である。これは単に「遅く動作する」のではない；「遷移の瞬間に何も確定中でないよう、十分早く終える」ことである。**これは PTSG に、記述したカウントが線上のサイクルと一致し、境界が清潔でなければならない、通信およびビデオ同期グレードのタイミング厳格性を与える規律である。**
+
+**A recursive doctrine, reaching the clock.** The doctrine is recursive: it applies at every scale of boundary, and it bottoms out at the clock itself. The memory clock is deliberately falling-edge (EDGE=NEG, Chapters 2/4): this gives the clock its own trailing edge, at which the fetched instruction resolves, so that at the rising edge everything downstream is already settled. EDGE=NEG is therefore not a stale-fetch workaround but the Trailing-Edge Doctrine reaching the silicon root — the principle made physical at the lowest level.
+
+**クロックに達する再帰的原則。** 原則は再帰的である: あらゆるスケールの境界に適用され、クロック自身に底を打つ。メモリクロックは意図的に立下りである(EDGE=NEG、第2/4章): これはクロックに自身の後縁を与え、そこでフェッチされた命令が確定し、ゆえに立ち上がりでは下流のすべてが既に静定している。したがって EDGE=NEG は stale-fetch の回避策ではなく、後縁主義がシリコンの根に達したもの——最下層で物理化された原則——である。
+
+**The nested hierarchy.** Boundaries nest: loop count → stay count → prescaler count → clock. Each outer boundary's trailing edge is composed from the settled trailing edges of the level below, and settledness propagates upward, so every level greets its "new year" already stable. (The architect's metaphor: as people work hardest at year-end so that the new year may begin calm, each level of PTSG completes its accounting at its trailing edge so the next may begin settled.) The structural phase-lock of the prescaler (C4-F9) is exactly this hierarchy being *in register*: a loop is an integer number of prescale periods, so the prescaler's year-end aligns with the loop's, and no jitter can enter.
+
+**入れ子のヒエラルキー。** 境界は入れ子になる: ループカウント → ステイカウント → プリスケーラカウント → クロック。各外側境界の後縁は下位層の静定した後縁から構成され、静定が上方へ伝播し、各層は既に安定した「新年」を迎える。(アーキテクトの比喩: 人が年末に最も忙しく働き新年が穏やかに始まるように、PTSG の各層は後縁で勘定を終え、次が静定して始まれるようにする。)プリスケーラの構造的位相ロック(C4-F9)はまさにこのヒエラルキーが*レジスタ済み(in register)*であること: ループはプリスケール周期の整数個ゆえ、プリスケーラの年末がループの年末と揃い、ジッタは入り得ない。
+
+**Consequences across the specification.** Several decisions are derivations of this single principle, and cite it: foreground commands are prescaled so that every command ends on a trailing edge (C4-F8); the prescaler is free-running and structurally phase-locked (C4-F9); Stay Set is clear/sync-only so no background-program length can smear the trailing edge (C4-F10); and a queued operation fires **at the trailing edge** — the moment its count completes — which resolves the queued-firing edge decision as Fixed (C4-F11, trailing; was Tie C4-T3). A sustained external strobe, where needed, is a Formation-side concern derived from the trailing-edge match pulse, not a Core leading-edge action.
+
+**仕様全体への帰結。** いくつかの決定はこの単一原則の派生であり、それを引用する: 前景コマンドはプリスケールド実行され、あらゆるコマンドが後縁で終わる(C4-F8)；プリスケーラは自由走行し構造的に位相ロックする(C4-F9)；Stay Set はクリア／同期のみで、いかなる背景プログラム長も後縁を滲ませない(C4-F10)；そしてキュー演算は**後縁で**——そのカウントが完了する瞬間に——発火し、これがキュー発火縁の決定を Fixed(C4-F11、後縁；旧 Tie C4-T3)として解決する。持続的な外部ストローブは、必要な場合、後縁一致パルスから導かれる Formation 側の関心事であって、Core の前縁アクションではない。
+
+**The principled exceptions — StaySet and Reset.** The doctrine has two exceptions, and they prove the rule. Foreground-executed **Stay Set** and **Reset** are placed on the **leading edge** — the first clock cycle marking a state's *start* — because their job is to mark a beginning, which is a leading-edge act. They do not violate the doctrine; they **stand on** it. They may be safely placed at the leading edge *only because* the doctrine guarantees that edge is settled: each depends on the precondition that the immediately preceding command has ended on a prescaler tick (a trailing edge). Upstream trailing-edge determination is exactly what makes a clean leading-edge placement possible downstream. Any future command placed on a leading edge must satisfy this same precondition.
+
+**原則的な例外——StaySet と Reset。** 原則には二つの例外があり、それらが規則を証明する。前景実行される **Stay Set** と **Reset** は**前縁**——ある状態の*開始*を標す最初のクロックサイクル——に配置される、なぜならその仕事は始まりを標すことであり、それは前縁のアクションだからである。これらは原則を破らない；原則の**上に立つ**。前縁に安全に置けるのは、*ただ*原則がその縁を静定させているからである: 各々は、直前のコマンドがプリスケーラティック(後縁)で終わっているという前提に依存する。上流の後縁確定こそが、下流の清潔な前縁配置を可能にする。前縁に置かれる将来のいかなるコマンドも、この同じ前提を満たさねばならない。
+
+**Relationship to the RH001–008 revisions.** Many of the architect's source revisions RH001–RH008 (2026-06-14/15) were, in retrospect, conversions toward trailing-edge determination. The Layer 4 verification campaign that resolved the residual bring-up anomaly (Build Logs #6–#8) was, at root, the specification catching up to a doctrine the source had already encoded. The reasoning is archived in the Layer 2 trace `2026-06-24_ptsg-trailing-edge-doctrine`.
+
+**RH001–008 改訂との関係。** アーキテクトのソース改訂 RH001–RH008(2026-06-14/15)の多くは、振り返れば後縁確定への変更だった。残留ブリングアップ異常を解決した Layer 4 検証キャンペーン(Build Log #6–#8)は、根本では、ソースが既に符号化していた原則に仕様が追いつくことだった。推論は Layer 2 トレース `2026-06-24_ptsg-trailing-edge-doctrine` に保管されている。
+
+---
+
 ## 1.5 Design Philosophy — Externalization of Condition Logic / 設計哲学 — Conditionロジックの外部化
 
 **The principle.** PTSG exposes a single 1-bit Condition input to its environment. Branch instructions consult this input to decide whether to branch. **All complexity of how the Condition is computed — comparisons, threshold tests, multi-signal AND/OR logic, sensor processing, communication-protocol parsing — is the responsibility of external logic, not of the Core.**
@@ -362,7 +390,7 @@ The following are deliberately left unresolved in this chapter and will be addre
 |---|---|---|
 | C1-D1 | PTSG is documented as a Layer 1 specification with subsequent chapters (Chapters 2–5, future 6) specifying technical details / PTSGは後続章(第2-5章、将来の第6章)が技術的詳細を指定する第1層仕様として文書化される | Fixed / 確定 |
 | C1-D2 | PTSG-Core's defining content: instruction set, memory layout, sub-opcode architecture, external interface contract — and nothing else / PTSGコアの定義的内容: 命令セット、メモリレイアウト、サブオペコードアーキテクチャ、外部インターフェース契約——そしてそれ以外何もない | Fixed / 確定 |
-| C1-D3 | Four essential properties: time/space axis separation, Condition externalization, background execution during Stay, AI-affinity as primary design property / 四つの本質的特性: 時間／空間軸分離、Conditionの外部化、Stay中の裏実行、一次設計属性としてのAI親和性 | Fixed / 確定 |
+| C1-D3 | Five essential properties: time/space axis separation, the Trailing-Edge Doctrine (timing rigor), Condition externalization, background execution during Stay, AI-affinity as primary design property / 五つの本質的特性: 時間／空間軸分離、後縁主義(タイミング厳格性)、Conditionの外部化、Stay中の裏実行、一次設計属性としてのAI親和性 | Fixed / 確定 (v1.1) |
 | C1-D4 | Condition input is 1 bit, externally generated. All conditional complexity lives in external Condition logic, not in the Core / Condition入力は1ビット、外部生成。すべての条件的複雑性はコアではなく外部Conditionロジックに存在する | Fixed / 確定 |
 | C1-D5 | Branch convention: branch when Condition fails; advance to next state when Condition is true ("true means no-branch") / Branch慣習: Condition不成立で分岐；Condition成立で次ステートへ進む(「成立で不分岐」) | Fixed / 確定 |
 | C1-D6 | Opcode budget: 4 of 16 slots used; 12 reserved as design insurance against unknowable future needs. AI-affinity criterion governs use of reserved slots / オペコード予算: 16スロットのうち4個を使用；12個は未知な将来の必要に対する設計保険として予約。AI親和性基準が予約スロットの使用を統治する | Fixed / 確定 |
@@ -372,6 +400,7 @@ The following are deliberately left unresolved in this chapter and will be addre
 | C1-D10 | Anti-coupling with specific applications: PTSG-Core contains no application-specific content; WPMS-side requirements R1–R7/W1–W2 are deferred to `PTSG_WPMS_Formation_OpenPrompt` / 特定応用との非結合: PTSGコアは応用固有内容を含まない；WPMS側要件 R1–R7/W1–W2 は `PTSG_WPMS_Formation_OpenPrompt` に繰り延べられる | Fixed / 確定 |
 | C1-D11 | Architectural relationship with FPGA Spectrum Engine: PTSG is the more general primitive; Spectrum Engine (via its WPMS Formation) is one application of PTSG / FPGA Spectrum Engineとのアーキテクチャ的関係: PTSGがより一般的なプリミティブ；Spectrum Engine(そのWPMSフォーメーション経由)がPTSGの一つの応用 | Fixed / 確定 |
 | C1-D12 | Layer 1 specification is implementation-neutral; Layer 3 samples are illustrative not normative; regenerated implementations are independent works, not derivatives of samples / 第1層仕様は実装中立；第3層サンプルは規範的ではなく例示的；再生成された実装はサンプルの派生物ではなく独立著作物である | Fixed / 確定 |
+| C1-D13 (v1.1) | The Trailing-Edge Doctrine (§ 1.4a): all state is determined by the trailing edge of every boundary so the leading edge is settled; recursive to the clock (EDGE=NEG); nested loop→stay→prescaler→clock hierarchy; derives C4-F8/F9/F10 and the trailing-edge resolution of queued firing (C4-T3 → C4-F11); principled exceptions are foreground StaySet and Reset (leading-edge-placed, depending on the preceding command ending on a trailing edge) / 後縁主義(§ 1.4a): あらゆる境界の後縁までに全状態を確定し前縁を静定させる；クロックまで再帰(EDGE=NEG)；ループ→ステイ→プリスケーラ→クロックの入れ子；C4-F8/F9/F10 とキュー発火の後縁解決（C4-T3 → C4-F11）を導く；原則的例外は前景 StaySet と Reset | Fixed / 確定 (v1.1) |
 
 ---
 

@@ -304,9 +304,9 @@ v1.1 協議は(C3-F14、C3-F18)、ループカウンタと一致フラグが外�
 
 **`loop_cnt_match` — 1 ビットパルス、Loop が使われるなら必須。** ループカウンタが目標値に達する瞬間(つまり、ループの脱出クロック)に**ちょうど 1 クロック**アサートされる。これは、Formation 側の外部カウンタや他のロジックがコアのループ反復境界と同期する主要な機構である。C3-F18 による。
 
-**`stay_counter[11:0]`, `stay_cnt_match` — optional outputs.** Symmetric to `loop_counter` / `loop_cnt_match` but for the Stay counter. `stay_counter` reflects the current stay-counter value (ticking at prescaler rate per C4-F1/F2); `stay_cnt_match` pulses at Stay-timeup. The match-flag timing is governed by Tie C4-T3 (formerly C3-T10) — leading vs trailing edge of prescale period.
+**`stay_counter[11:0]`, `stay_cnt_match` — optional outputs.** Symmetric to `loop_counter` / `loop_cnt_match` but for the Stay counter. `stay_counter` reflects the current stay-counter value (ticking at prescaler rate per C4-F1/F2); `stay_cnt_match` pulses at Stay-timeup. The match-flag timing is governed by C4-F11 (was Tie C4-T3): the pulse is at the **trailing edge** of the prescale period (Trailing-Edge Doctrine, Chapter 1 § 1.4a).
 
-**`stay_counter[11:0]`、`stay_cnt_match` —— オプション出力。** `loop_counter` / `loop_cnt_match` と対称だが Stay カウンタについて。`stay_counter` は現在のステイカウンタ値(C4-F1/F2 に従いプリスケーラレートでティックする)を反映する；`stay_cnt_match` は Stay-timeup でパルスする。一致フラグタイミングは Tie C4-T3(旧 C3-T10)によって支配される —— プリスケール周期の前縁対後縁。
+**`stay_counter[11:0]`、`stay_cnt_match` —— オプション出力。** `loop_counter` / `loop_cnt_match` と対称だが Stay カウンタについて。`stay_counter` は現在のステイカウンタ値(C4-F1/F2 に従いプリスケーラレートでティックする)を反映する；`stay_cnt_match` は Stay-timeup でパルスする。一致フラグタイミングは C4-F11（旧 Tie C4-T3）によって支配される —— パルスはプリスケール周期の**後縁**（後縁主義、第1章 § 1.4a）。
 
 **`prescaler_counter`, `prescaler_match` — optional outputs.** Symmetric again. `prescaler_counter` width depends on prescaler configuration (Tie C4-T2): for (A) compile-time fixed, the width matches the chosen prescaler value's bit-width; for (B) runtime-configurable, it matches the prescaler-register width. `prescaler_match` pulses at every prescaler period boundary.
 
@@ -449,9 +449,9 @@ Following the established classification: **Fixed (F)** = architectural commitme
 | **C5-V7** | Match-flag naming Convention: `<name>_cnt_match` (loop_cnt_match, stay_cnt_match, prescaler_match) / 一致フラグ命名慣習: `<name>_cnt_match` | **V** |
 | **C5-T1** | Glitch-free timing-signal and state-number transitions Tie (pin-level expression of C2-T3): (A) guaranteed glitch-free with 1-clock latency; (B) Implementation Arena. Contributor leans toward (B) for Core minimalism, with Formation able to add registers if needed / グリッチフリーなタイミング信号とステートナンバー遷移 Tie(C2-T3 のピンレベル表現): (A) 1 クロックレイテンシで保証されたグリッチフリー；(B) Implementation Arena。貢献者はコアミニマリズムのために (B) に傾き、必要なら Formation がレジスタを追加できる | **T** |
 
-**Decision count by status:** Fixed (F): 2; Convention (V): 7; Tie (T): 1 (plus references to Ties from earlier chapters that have pin-level expressions here: C2-T3 → C5-T1, C2-T4, C3-T7, C4-T1, C4-T2, C4-T3, C4-T4).
+**Decision count by status:** Fixed (F): 2; Convention (V): 7; Tie (T): 1 (plus references to Ties from earlier chapters that have pin-level expressions here: C2-T3 → C5-T1, C3-T7, C4-T1, C4-T2; C2-T4→C4-F8, C4-T3→C4-F11, C4-T4→C4-F10 are now resolved to Fixed in v1.1).
 
-**地位別決定数:** Fixed (F): 2；Convention (V): 7；Tie (T): 1(これに加え、ここでピンレベル表現を持つ前の章からの Tie への参照: C2-T3 → C5-T1、C2-T4、C3-T7、C4-T1、C4-T2、C4-T3、C4-T4)。
+**地位別決定数:** Fixed (F): 2；Convention (V): 7；Tie (T): 1(これに加え、ここでピンレベル表現を持つ前の章からの Tie への参照: C2-T3 → C5-T1、C3-T7、C4-T1、C4-T2；C2-T4→C4-F8、C4-T3→C4-F11、C4-T4→C4-F10 は v1.1 で Fixed へ解決済み)。
 
 The lower Fixed count compared to earlier chapters reflects the nature of pin-level specification: most decisions are Conventions (sensible defaults that could be varied) rather than architectural absolutes. The single new Tie C5-T1 is the pin-level expression of C2-T3 (glitch-free transitions) and was always destined to live at this level.
 
