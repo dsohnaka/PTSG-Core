@@ -75,7 +75,9 @@
 // 006 2026-06-15 21:07 Arch. Ohnaka  Add : This defines the execution of JUMP as a Que command, background command, and foreground command.
 // 007 2026-06-15 21:07 Arch. Ohnaka  Add : Opcode for Foreground commands can also be queued.
 // 008 2026-06-15 21:07 Arch. Ohnaka  Add : When queuing the JUMP command
-//
+// 009 2026-07-07       Claude Code   Mod : Loop operand/counter width is 16 bits (full D16-D31 extended
+//                                          operand, architect ruling 2026-07-07). loop_cnt / hr_loop /
+//                                          queued_target / loop_counter output / STACK_W widened via LOOP_W.
 //
 // ============================================================================
 
@@ -84,14 +86,17 @@ module ptsg_core #(
     parameter integer ADDR_W      = 12,           // State-number / address width (Fixed by Core)
     parameter integer DATA_W      = 32,           // Instruction word width        (Fixed by Core)
     parameter integer TSIG_W      = 16,           // Timing-signal bus width        (Fixed by Core)
-    parameter integer CNT_W       = 12,           // Stay / loop counter width      (C3-V2)
+    parameter integer CNT_W       = 12,           // Stay counter width (12-bit operand D4-D15)
+    parameter integer LOOP_W      = 16,           // Loop counter/target width — full D16-D31
+                                                  // extended operand (architect ruling 2026-07-07;
+                                                  // supersedes the 12-bit C3-V2 reading)
     parameter integer IMEM_DEPTH  = 256,          // Instruction-memory depth (<= 4096)
     // ---- Prescaler (C4-T2 option A: compile-time fixed) ---------------------
     parameter integer PRESCALE    = 5,            // System-clock divider for the time axis (>=1)
     parameter integer PRESC_W     = 32,           // Prescaler counter width
     // ---- External stack data layout ----------------------------------------
-    //   {ins_flag, base[11:0], loop[11:0], state[11:0]} = 1 + 12 + 12 + 12 = 37
-    parameter integer STACK_W     = 1 + ADDR_W + CNT_W + ADDR_W,
+    //   {ins_flag, base[11:0], loop[15:0], state[11:0]} = 1 + 12 + 16 + 12 = 41
+    parameter integer STACK_W     = 1 + ADDR_W + LOOP_W + ADDR_W,
     // ---- Instruction-memory initialisation (simulation: hex; Quartus: .mif) -
     parameter         INIT_FILE     = "blinky_with_prescaler.hex",  // $readmemh file (SIM branch), or "" for none
     parameter         INIT_FILE_MIF = "",           // .mif file (M10K branch), or "" for none
@@ -128,7 +133,7 @@ module ptsg_core #(
     output reg                  insert_ack,
 
     // ---- Loop-counter and match flags (§5.10) -------------------------------
-    output wire [CNT_W-1:0]     loop_counter,
+    output wire [LOOP_W-1:0]    loop_counter,
     output reg                  loop_cnt_match,
     output wire [CNT_W-1:0]     stay_counter,
     output reg                  stay_cnt_match,
@@ -171,12 +176,12 @@ module ptsg_core #(
     //  Core control registers
     // ========================================================================
     reg [ADDR_W-1:0]  state_num;        // Program counter (the live State Number)
-    reg [CNT_W-1:0]   loop_cnt;         // Single primary loop counter (C3-F16), up-count
+    reg [LOOP_W-1:0]  loop_cnt;         // Single primary loop counter (C3-F16), up-count
     reg [ADDR_W-1:0]  base_addr;        // Loop base address (Base Set)
 
     // Internal information-holding register (depth-1, C3-F10) ----------------
     reg [ADDR_W-1:0]  hr_state;
-    reg [CNT_W-1:0]   hr_loop;
+    reg [LOOP_W-1:0]  hr_loop;
     reg [ADDR_W-1:0]  hr_base;
     reg               hr_ins;           // "saved by insertion" flag (C3-T7 lean A)
     reg               hr_occupied;
@@ -190,7 +195,7 @@ module ptsg_core #(
     reg               queued_valid;
     reg [7:0]         queued_subop;
     reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
-    reg [CNT_W-1:0]   queued_target;
+    reg [LOOP_W-1:0]  queued_target;
 
     // Stay-counter (13-bit internal: 0..4096) --------------------------------
     reg [CNT_W:0]     stay_cnt;
@@ -213,7 +218,7 @@ module ptsg_core #(
 
     // Pending context for a stalled (PUSH) auto-save -------------------------
     reg [ADDR_W-1:0]  pend_state;       // return address to store
-    reg [CNT_W-1:0]   pend_loop;
+    reg [LOOP_W-1:0]  pend_loop;
     reg [ADDR_W-1:0]  pend_base;
     reg               pend_ins;
     reg [ADDR_W-1:0]  pend_target;      // where to jump once the save completes
@@ -297,8 +302,8 @@ module ptsg_core #(
     //   loop_cnt+1 >= target  -> exit, auto-clear, emit match (C3-F17/F18)
     //   else                  -> continue, jump to base_addr
     function automatic [0:0] loop_exits;
-        input [CNT_W-1:0] cur;
-        input [CNT_W-1:0] target;
+        input [LOOP_W-1:0] cur;
+        input [LOOP_W-1:0] target;
         begin
             loop_exits = (target == 0) || ((cur + 1'b1) >= target);
         end
@@ -328,10 +333,10 @@ module ptsg_core #(
             // -------- Synchronous reset (C5-V3); also the Reset sub-op target -
             state_num       <= {ADDR_W{1'b0}};
             timing_signals  <= {TSIG_W{1'b0}};
-            loop_cnt        <= {CNT_W{1'b0}};
+            loop_cnt        <= {LOOP_W{1'b0}};
             base_addr       <= {ADDR_W{1'b0}};
             hr_state        <= {ADDR_W{1'b0}};
-            hr_loop         <= {CNT_W{1'b0}};
+            hr_loop         <= {LOOP_W{1'b0}};
             hr_base         <= {ADDR_W{1'b0}};
             hr_ins          <= 1'b0;
             hr_occupied     <= 1'b0;
@@ -340,7 +345,7 @@ module ptsg_core #(
             prog_end_seen   <= 1'b0;
             queued_valid    <= 1'b0;
             queued_subop    <= 8'd0;
-            queued_target   <= {CNT_W{1'b0}};
+            queued_target   <= {LOOP_W{1'b0}};
             stay_cnt        <= {(CNT_W+1){1'b0}};
             stay_target     <= {(CNT_W+1){1'b0}};
             presc_cnt       <= {PRESC_W{1'b0}};
@@ -397,7 +402,7 @@ module ptsg_core #(
                             SUB_RESET: begin
                                 // Force State Number to 0; clear counters/holding.
                                 state_num      <= {ADDR_W{1'b0}};
-                                loop_cnt       <= {CNT_W{1'b0}};
+                                loop_cnt       <= {LOOP_W{1'b0}};
                                 base_addr      <= {ADDR_W{1'b0}};
                                 hr_occupied    <= 1'b0;
                                 stack_depth    <= 16'd0;
@@ -455,13 +460,13 @@ module ptsg_core #(
                                     // Defer to Stay-timeup (queued band).
                                     queued_valid  <= 1'b1;
                                     queued_subop  <= SUB_LOOP;
-                                    queued_target <= g_ext[CNT_W-1:0];
+                                    queued_target <= g_ext[LOOP_W-1:0];
                                     state_num     <= state_num + 1'b1;
                                 end else begin
                                     // Immediate / foreground Loop (literal target;
                                     // indirect target handled via S_IND above).
-                                    if (loop_exits(loop_cnt, g_ext[CNT_W-1:0])) begin
-                                        loop_cnt       <= {CNT_W{1'b0}};
+                                    if (loop_exits(loop_cnt, g_ext[LOOP_W-1:0])) begin
+                                        loop_cnt       <= {LOOP_W{1'b0}};
                                         loop_cnt_match <= 1'b1;
                                         state_num      <= state_num + 1'b1;
                                     end else begin
@@ -606,7 +611,7 @@ module ptsg_core #(
                         // itself is computed by the combinational resume_addr wire.
                         if (queued_valid && (queued_subop == SUB_LOOP)) begin
                             if (loop_exits(loop_cnt, queued_target)) begin
-                                loop_cnt       <= {CNT_W{1'b0}};
+                                loop_cnt       <= {LOOP_W{1'b0}};
                                 loop_cnt_match <= 1'b1;
                             end else begin
                                 loop_cnt    <= loop_cnt + 1'b1;
@@ -639,8 +644,8 @@ module ptsg_core #(
                 if (indirect_ready) begin
                     fsm <= S_RUN;
                     if (ind_is_loop) begin
-                        if (loop_exits(loop_cnt, indirect_data[CNT_W-1:0])) begin
-                            loop_cnt       <= {CNT_W{1'b0}};
+                        if (loop_exits(loop_cnt, {{(LOOP_W-ADDR_W){1'b0}}, indirect_data})) begin
+                            loop_cnt       <= {LOOP_W{1'b0}};
                             loop_cnt_match <= 1'b1;
                             state_num      <= state_num + 1'b1;
                         end else begin
