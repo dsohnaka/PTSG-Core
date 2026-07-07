@@ -87,6 +87,11 @@
 // 012 2026-07-07       Claude Code   Mod : Branch band-templated (§3.4b): FG decides on the prescaler tick
 //                                          (C4-F8) and drives tsig; BG/Q hold tsig and decide at full clock.
 //                                          Q reservation (evaluate-at-timeup) deferred to Phase 3.
+// 013 2026-07-07       Claude Code   Mod : Insertion — the C3-F20 deferral is enforced (no acceptance inside
+//                                          an open window; the S_WAIT timeup path honours the held request),
+//                                          and an occupied holding register spills to the external stack
+//                                          (implicit push, C3-T6 lean A) via save_or_set(is_insert), making
+//                                          the pend_is_insert path live.
 //
 // ============================================================================
 
@@ -277,8 +282,13 @@ module ptsg_core #(
                          (need_ind_jump || need_ind_loop);
 
     // Honour an insertion request at the next safe moment in RUN (between
-    // instructions). Inside a Stay window it is deferred to timeup (C3-F20).
-    wire insert_pending = (fsm == S_RUN) && insert_req && !hr_occupied;
+    // instructions). Inside a Stay window it is deferred to timeup (C3-F20):
+    // the S_WAIT timeup path honours the (still-held) request instead.
+    // RH013: the !window_open term makes the C3-F20 deferral real (the old
+    // expression accepted an insertion mid-window, during the BG scan), and
+    // an occupied holding register now spills to the external stack
+    // (C3-T6 lean A) instead of blocking the request.
+    wire insert_pending = (fsm == S_RUN) && insert_req && !window_open;
 
     // ========================================================================
     //  Combinational external-bus outputs
@@ -402,14 +412,10 @@ module ptsg_core #(
                 if (insert_pending) begin
                     // ---- Honour insertion (between instructions) -----------
                     //  Save the instruction we were about to execute (no +1 on
-                    //  return, C3-F12) and jump to the inserted address.
-                    hr_state    <= state_num;
-                    hr_loop     <= loop_cnt;
-                    hr_base     <= base_addr;
-                    hr_ins      <= 1'b1;
-                    hr_occupied <= 1'b1;
-                    state_num   <= insert_target;
-                    insert_ack  <= 1'b1;
+                    //  return, C3-F12) and jump to the inserted address. An
+                    //  occupied holding register spills to the external stack
+                    //  first (implicit push, C3-T6 lean A) — RH013.
+                    save_or_set(state_num, 1'b1, insert_target, 1'b1);
                 end
                 else if (need_indirect) begin
                     // ---- Begin an indirect read; stall in S_IND ------------
@@ -479,7 +485,8 @@ module ptsg_core #(
                                 // offset in the extended operand (D16-D31).
                                 save_or_set(state_num,
                                             1'b0,
-                                            state_num + g_ext[ADDR_W-1:0]);
+                                            state_num + g_ext[ADDR_W-1:0],
+                                            1'b0);
                             end
                             SUB_LOOP: begin
                                 if (in_queued_band) begin
@@ -646,16 +653,14 @@ module ptsg_core #(
                             end
                         end
 
-                        // Deferred insertion (C3-F20). Honour only when the
-                        // holding register is free (else the request is held).
-                        if (insert_req && !hr_occupied) begin
-                            hr_state    <= resume_addr;
-                            hr_loop     <= loop_cnt;
-                            hr_base     <= base_addr;
-                            hr_ins      <= 1'b1;
-                            hr_occupied <= 1'b1;
-                            state_num   <= insert_target;
-                            insert_ack  <= 1'b1;
+                        // Deferred insertion (C3-F20). An occupied holding
+                        // register spills to the external stack (implicit
+                        // push, C3-T6 lean A; the later fsm <= S_PUSH inside
+                        // save_or_set overrides the S_RUN assigned above) —
+                        // RH013. The saved address is the post-Stay resume
+                        // address (no +1 on return, C3-F12).
+                        if (insert_req) begin
+                            save_or_set(resume_addr, 1'b1, insert_target, 1'b1);
                         end else begin
                             state_num   <= resume_addr;
                         end
@@ -729,9 +734,11 @@ module ptsg_core #(
     //  Auto-save helper (task): save the current context (or spill to stack if
     //  the holding register is already occupied) and set the jump target.
     //
-    //   save_state : the return address to record (return-to-after = addr+1)
+    //   save_state : the return address to record (return-to-after = addr+1;
+    //                for insertion, the address itself — C3-F12)
     //   ins        : the "saved-by-insertion" flag (C3-T7)
     //   target     : where execution continues immediately after the save
+    //   is_insert  : pulse insert_ack (now, or on S_PUSH completion) — RH013
     // ========================================================================
     // ========================================================================
     //  Branch decision (task): the Condition-directed next-state selection,
@@ -748,7 +755,7 @@ module ptsg_core #(
             end else begin
                 // Branch taken => auto-save the branch address
                 // (Return restores saved+1), jump forward.
-                save_or_set(state_num, 1'b0, state_num + operand);
+                save_or_set(state_num, 1'b0, state_num + operand, 1'b0);
             end
         end
     endtask
@@ -757,6 +764,7 @@ module ptsg_core #(
         input [ADDR_W-1:0] save_state;
         input              ins;
         input [ADDR_W-1:0] target;
+        input              is_insert;  // RH013: pulse insert_ack (now, or on S_PUSH completion)
         begin
             if (hr_occupied) begin
                 // Spill the existing context first (implicit push, C3-T6 lean A).
@@ -765,7 +773,7 @@ module ptsg_core #(
                 pend_base      <= base_addr;
                 pend_ins       <= ins;
                 pend_target    <= target;
-                pend_is_insert <= 1'b0;
+                pend_is_insert <= is_insert;
                 stack_push_req <= 1'b1;
                 fsm            <= S_PUSH;
             end else begin
@@ -775,6 +783,7 @@ module ptsg_core #(
                 hr_ins      <= ins;
                 hr_occupied <= 1'b1;
                 state_num   <= target;
+                if (is_insert) insert_ack <= 1'b1;
             end
         end
     endtask
