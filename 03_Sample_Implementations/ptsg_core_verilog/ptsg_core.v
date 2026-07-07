@@ -81,6 +81,9 @@
 // 010 2026-07-07       Claude Code   Mod : Que/BG NOP (and reserved 8-255) advance with state_num+1; band is
 //                                          judged by in_queued_band (architect ruling 2026-07-07). The former
 //                                          prog_end_seen -> S_WAIT transition is removed. Band-template kept.
+// 011 2026-07-07       Claude Code   Mod : A4 conformance — the in-window stay-counter tick increment is
+//                                          hoisted to a single rule outside the opcode case (covers BG
+//                                          Branch/Jump and S_IND/S_PUSH/S_POP, which RH004/005 missed).
 //
 // ============================================================================
 
@@ -371,6 +374,23 @@ module ptsg_core #(
             // Free-running prescaler ----------------------------------------
             presc_cnt <= presc_tick ? {PRESC_W{1'b0}} : (presc_cnt + 1'b1);
 
+            // =============================================================================//
+            // REVISION HISTORY 011 (A4 hoist)                                              //
+            // 2026-07-07 Claude Code  Mod : While the Stay window is open, the stay        //
+            //      counter counts EVERY prescaler tick regardless of which in-window       //
+            //      path is executing (C4-F10 On-Tick; Ch3 §3.2 / §3.4b "Continue counting  //
+            //      ... when On-Tick") — including BG Branch/Jump and the S_IND/S_PUSH/     //
+            //      S_POP stalls, which the per-path RH004/RH005 increments missed. This    //
+            //      single rule replaces them. S_WAIT keeps its own count/timeup handling   //
+            //      (it must also serve the windowless bare-Stay case), and later explicit  //
+            //      assignments in the case below (Stay Set arm, timeup clear) override     //
+            //      this default increment, which also removes the RH005-overwrites-arm    //
+            //      ordering hazard.                                                        //
+            // =============================================================================//
+            if (window_open && presc_tick && (fsm != S_WAIT))                               //
+                stay_cnt <= stay_cnt + 1'b1;                                                //
+            // =============================================================================//
+
             case (fsm)
             // ================================================================
             //  S_RUN — fetch and execute one state per clock
@@ -516,16 +536,8 @@ module ptsg_core #(
                             // D16-D31 is operand data, so timing_signals is held.
                             state_num <= state_num + 1'b1;
                         end
-                        // =============================================================================//
-                        // REVISION HISTORY  005                                                        //
-                        // 2026-06-15 21:07 Arch. Ohnaka  Add : When the Stay window is open,           //
-                        //      even if a global command is running, the Stay counter needs             //
-                        //      to be incremented when the prescaler expires.                           //
-                        // =============================================================================//
-                        if ( window_open && presc_tick ) begin                                          //
-                            stay_cnt <= stay_cnt + 1'b1;                                                //
-                        end                                                                             //
-                        // =============================================================================//
+                        // RH005 (2026-06-15, Arch. Ohnaka): in-window tick increment — superseded
+                        // by the hoisted single rule above the case (RH011 / A4).
                     end
                     // --------------------------------------------------------
                     //  Stay (opcode 1) — enter the wait
@@ -535,16 +547,8 @@ module ptsg_core #(
                         stay_target    <= stay_dur;
                         timing_signals <= tsig;        // held value during wait (C3-T1 A)
                         fsm            <= S_WAIT;
-                        // =============================================================================//
-                        // REVISION HISTORY  004                                                        //
-                        // 2026-06-14  Arch. Ohnaka  Add : Since the stay counter may have              //
-                        //      already started counting due to StaySet, in that case,                  //
-                        //      if it's a prescaler tick, the stay counter needs to be incremented.     //
-                        // =============================================================================//
-                        if ( window_open && presc_tick ) begin                                          //
-                            stay_cnt <= stay_cnt + 1'b1;                                                //
-                        end                                                                             //
-                        // =============================================================================//
+                        // RH004 (2026-06-14, Arch. Ohnaka): in-window tick increment — superseded
+                        // by the hoisted single rule above the case (RH011 / A4).
                     end
                     // --------------------------------------------------------
                     //  Branch (opcode 2) — conditional state transition
