@@ -126,11 +126,11 @@ and **does** require RTL work and is not yet silicon-verified.
 - **Spec now says / 仕様の現記述:** FG Base Set/Return/Call/Loop/Prog End → HALT; stray Prog End (outside a window; second in the Q band) → HALT; queued SN-overwrite → HALT (C8); unpaired Base Set↔Loop across bands → HALT. SN holds at the violating instruction; an **error-flag output port** is raised (SignalTap + insertion trigger). Exit: hardware reset (ISMCE live patch / insertion as repair paths).
 - **RTL implication / RTL 含意:** add an **S_HALT** state, the trap decodes above, the Base Set↔Loop band-pairing tracking, and the error-flag output. Keep the flag registered (trailing-edge discipline). Consider (do not yet implement) a DEBUG_CHECKS parameter for the costlier checks.
 
-### C6 — Stay Start State register + stack-frame extension / Stay Start Stateレジスタ＋スタックフレーム拡張
+### C6 — Stay Start State register (same-cycle hand-off) / Stay Start Stateレジスタ（同一サイクル引き渡し）
 
-- **Chapter / 章:** Ch3 § 3.4b (C3-F25).
-- **Spec now says / 仕様の現記述:** FG Stay Set writes its own State Number to **stay_start_state**; held until the matching Loop; **queued Base Set loads Base := stay_start_state** (BG Base Set keeps Base := current SN); part of the saved context on nesting (external-stack frame gains a member); reset 0; Core-invisible.
-- **RTL implication / RTL 含意:** add the register; write in SUB_STAYSET (FG path); **mux the SUB_BASESET base source by band**; extend the stack push/pop frame layout (affects verification-queue #3). Scaled 2^28 self-loop conformance item recommended (e.g. Loop-4 × Stay-8).
+- **Chapter / 章:** Ch3 § 3.4b (C3-F25; lifetime corrected 2026-07).
+- **Spec now says / 仕様の現記述:** FG Stay Set writes its own State Number to **stay_start_state**, valid only within that same Stay cycle. **A queued Base Set executing in that cycle loads Base := stay_start_state**, discharging it (BG Base Set keeps Base := current SN); if no Base Set occurs, the next Stay Set overwrites it. Reset 0; Core-invisible. *(Not stacked, not cross-Stay: carrying a target across many Stay periods to a distant Loop, including nesting, remains the Base register's own existing role — an earlier text conflated the two; corrected.)*
+- **RTL implication / RTL 含意:** add the register **as a plain register — no stack entry**; write in SUB_STAYSET (FG path); **mux the SUB_BASESET base source by band**. No change needed to the existing context-save/restore (holding-register) stack — confirm this in review (verification-queue #3 is unaffected). Scaled 2^28 self-loop conformance item recommended (e.g. Loop-4 × Stay-8).
 
 ### C7 — Reset: queued firing + own-tsig drive / Reset: Que発火＋自tsig駆動
 
@@ -170,7 +170,7 @@ and **does** require RTL work and is not yet silicon-verified.
 | **C3-V4** | Ch3 §3.4a | **Convention (仮確定)** | reset trace | optional Formation opt-in |
 | **C3-F23** | Ch3 §3.4b | **Fixed (仮確定)** | table trace | trap FG Base Set/Return/Call/Loop/ProgEnd |
 | **C3-F24** | Ch3 §3.4b | **Fixed (仮確定)** | table trace | S_HALT + error flag + pairing checks |
-| **C3-F25** | Ch3 §3.4b | **Fixed (仮確定)** | register trace | stay_start_state + Base mux + stack frame |
+| **C3-F25** | Ch3 §3.4b | **Fixed (仮確定, lifetime corrected 2026-07)** | register trace | stay_start_state (same-cycle, no stack) + Base mux |
 | **C3-F26** | Ch3 §3.4b | **Fixed (仮確定)** | register trace | SN-overwrite detect → HALT; last-write-wins |
 | **C3-T15** | Ch3 §3.4b | **Tie (open)** | register trace | none (keep queue depth = 1) |
 | **C4 (item)** | Ch3 §3.4b | **仮確定** | table | BG Stay Set re-kick; Q Stay Set |
@@ -189,7 +189,7 @@ and **does** require RTL work and is not yet silicon-verified.
 4. **C3-V4:** only if requested — add a bounded Formation-level opt-in for a prescaler-resetting Reset.
 5. **C4-F11** (was C4-T3): verify queued firing and the match pulse are on the **trailing edge** (count-completion); correct any leading-edge firing. Use the Trailing-Edge Doctrine as the global sanity lens.
 6. **C5 HALT machinery:** S_HALT, traps (FG-illegal Globals; stray Prog End; unpaired Base Set↔Loop), error-flag port.
-7. **C6 Stay Start State register:** register + queued-Base-Set mux + stack-frame extension; scaled 2^28 conformance item.
+7. **C6 Stay Start State register:** register (same-cycle hand-off, no stack change) + queued-Base-Set mux; scaled 2^28 conformance item.
 8. **C7 Reset revisions:** queued firing at timeup; drive own tsig (stop clearing to 0).
 9. **C8 queue rules:** last-write-wins; SN-overwrite → HALT. Keep queue depth = 1 (Tie C3-T15 open).
 10. **C4 BG/Q Stay Set:** implement the re-kick (BG) and define/implement queued Stay Set.
@@ -201,7 +201,7 @@ and **does** require RTL work and is not yet silicon-verified.
 4. **C3-V4:** 要請があれば——プリスケーラをリセットする Reset の境界付き Formation opt-in を追加。
 5. **C4-F11**（旧 C4-T3）: キュー発火と一致パルスが**後縁**（カウント完了）にあることを検証し、前縁発火があれば修正。後縁主義を全体の健全性レンズとして用いよ。
 6. **C5 HALT 機構:** S_HALT・トラップ群（FG 違法 Global;迷子 Prog End;不対 Base Set↔Loop）・エラーフラグポート。
-7. **C6 Stay Start State レジスタ:** レジスタ＋Que Base Set のマルチプレクサ＋スタックフレーム拡張;縮小 2^28 適合項目。
+7. **C6 Stay Start State レジスタ:** レジスタ（同一サイクル引き渡し、スタック変更なし）＋Que Base Set のマルチプレクサ;縮小 2^28 適合項目。
 8. **C7 Reset 改訂:** timeup での Que 発火;自 tsig 駆動（0 クリアをやめる）。
 9. **C8 Que 規則:** 後勝ち;SN 上書き → HALT。キュー深度は 1 のまま（Tie C3-T15 未決）。
 10. **C4 BG/Q Stay Set:** re-kick（BG）の実装と Que Stay Set の定義・実装。

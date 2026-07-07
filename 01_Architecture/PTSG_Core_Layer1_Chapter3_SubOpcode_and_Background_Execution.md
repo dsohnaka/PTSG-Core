@@ -317,7 +317,7 @@ of the next stay period. / 「when On-Tick」= 窓が開いている間、ステ
 | **Global · Base Set** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | Error HALT（暴走検知） |
 |  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>(同時にState NumberをBaseレジスタにセット） | Trailing | Legal | BGプログラムウィンドウ内でのBase Setが実行されたにもかかわらず対応するLoopコマンドを抜けないままProg Endに至った場合はエラーHALTする。 |
 |  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（同時に、Stay Start StateレジスタをBaseレジスタにセット） | Trailing | Legal | Stay Start Stateレジスタは、Stay SetコマンドがあったState Number。Que実行による表実行（時間処理）のループはこの起点に戻る必要がある。<br>対応するLoopコマンドがBGウィンドウ内にある場合はエラーHALTする。 |
-| **Global · Stay Set** | FG | Arm (reset to 0, and start counting) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Leading※ | Legal | C4-F10 (corrected): the counter starts here and counts On-Tick through the window; Stay never clears it. Leading-edge exception (Ch1 §1.4a).<br>【追加機能 → C3-F25】Stay Setが行われたState Numberは、そのStay期間中（対応するLoopまで）、Stay Start Stateレジスタに保持される。 |
+| **Global · Stay Set** | FG | Arm (reset to 0, and start counting) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Leading※ | Legal | C4-F10 (corrected): the counter starts here and counts On-Tick through the window; Stay never clears it. Leading-edge exception (Ch1 §1.4a).<br>【追加機能 → C3-F25、寿命2026-07訂正】Stay Setが行われたState Numberは、そのStay期間中、Stay Start Stateレジスタに保持される（同一サイクル内でQue Base Setに引き継がれるまで;対応するLoopまでではない——Base レジスタの役割と混同していたため訂正）。 |
 |  | BG | Continue counting (with reset) | Held (unchanged / frozen) | Consumes one tick (waits for next) | tickを待ってインクリメント | Trailing | Legal |  |
 |  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Trailing | Legal |  |
 | **Global · Return** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | Error HALT（暴走検知） |
@@ -401,19 +401,27 @@ former "blank shot = no effect" reading of a stray Prog End is superseded.
 
 ### The Stay Start State register — C3-F25 (PROVISIONAL / 仮確定) / Stay Start Stateレジスタ — C3-F25
 
-A new context register giving the **time axis its own notion of "here"**: when foreground **Stay Set**
-executes, its own State Number is written to **Stay Start State**, where it is held **for the duration
-of the stay period and beyond — until the corresponding Loop**, spanning many Stay periods; it is
-refreshed by the next Base Set at the loop head, and its duty ends when the Loop exits. On nested
-contexts it is **part of the saved frame** (pushed/popped with the external stack — the frame gains a
-member; verification queue #3). Reset value 0. **No Core-level external visibility**; a Formation may
-copy it to a general register to expose it.
+A new register giving the **time axis its own notion of "here"**: when foreground **Stay Set**
+executes, its own State Number is written to **Stay Start State**. *(Corrected 2026-07 — see Layer 2
+trace `2026-07-06_ptsg-stay-start-state-register`, DP-2: an earlier text described this register as
+surviving many Stay periods until the matching Loop and stacked on nesting; that conflated it with the
+Base register's own role.)* The corrected lifetime is a **same-cycle hand-off**: the value is valid
+only within the Stay cycle in which Stay Set wrote it. If a **queued Base Set** executes in that same
+cycle, the value is carried into the Base register and Stay Start State's job for that cycle is done;
+if no Base Set occurs, the next Stay Set simply overwrites it. Carrying a target across many Stay
+periods to a distant Loop remains the **Base register's own existing role**, including its stack
+push/pop on nesting — unaffected by this register. Reset value 0. **No Core-level external
+visibility**; a Formation may copy it to a general register to expose it.
 
-時間軸に**固有の「ここ」**を与える新しいコンテキストレジスタ: 前景の **Stay Set** が実行されると、自身の State
-Number が **Stay Start State** に書き込まれ、**そのステイ期間中、さらに対応する Loop まで**——多数の Stay 期間を
-跨いで——保持される;ループ先頭の次の Base Set で更新され、Loop を抜けた時に用が済む。入れ子コンテキストでは
-**退避フレームの一員**（外部スタックで push/pop——フレームにメンバーが一人増える;検証キュー#3）。リセット値 0。
-**Core レベルの外部可視性なし**;Formation は汎用レジスタへコピーして可視化できる。
+時間軸に**固有の「ここ」**を与える新しいレジスタ: 前景の **Stay Set** が実行されると、自身の State
+Number が **Stay Start State** に書き込まれる。*（2026-07 訂正——Layer 2 トレース
+`2026-07-06_ptsg-stay-start-state-register` の DP-2 参照: 以前の文は本レジスタを対応する Loop まで多数の
+Stay 期間を生き延び入れ子でスタックされると記していたが、それは Base レジスタ自身の役割との混同だった。）*
+訂正後の寿命は**同一サイクル引き渡し**: 値は Stay Set が書いたのと同じ Stay サイクル内でのみ有効。その
+サイクル内で **Que の Base Set** が実行されれば、値は Base レジスタへ運ばれ Stay Start State のそのサイクルの
+仕事は済む;Base Set が実行されなければ次の Stay Set が単に上書きする。多数の Stay を跨いで遠い Loop へ標的を
+運ぶのは**Base レジスタ既存の役割**（入れ子でのスタック push/pop を含む）のまま——本レジスタの影響を受けない。
+リセット値 0。**Core レベルの外部可視性なし**;Formation は汎用レジスタへコピーして可視化できる。
 
 **Queued Base Set semantics / Que の Base Set 意味論:** in the Q band, Base Set loads **Base := Stay
 Start State** (the time-axis origin), so a queued Loop returns to the start of the stay period — the
@@ -833,7 +841,7 @@ Following Chapter 2's classification scheme: **Fixed (F)** = architectural commi
 | **C3-V4** (v1.1, PROVISIONAL) | **Formation opt-in for prescaler-resetting Reset.** The Core forbids prescaler reset (C3-F21); a Formation MAY opt in where genuinely needed, accepting the loss of external synchronizability. A slave configuration must structurally never be able to reset the prescaler. See § 3.4a. / **プリスケーラをリセットする Reset の Formation opt-in。** コアはプリスケーラ・リセットを禁じる（C3-F21）；Formation は本当に必要なら選択でき、外部同期可能性の喪失を受け入れる。スレーブ構成は構造的に決してプリスケーラをリセットできてはならない。§ 3.4a 参照。 | **V** (仮確定) |
 | **C3-F23** (v1.1, PROVISIONAL) | **FG-Global exclusion principle.** Global commands do not execute in the foreground except Reset, Stay Set, NOP (each with a stated justification). Base Set/Return/Sub-sequence Call/Loop/Prog End are window-only; FG encounter = HALT. Enforces time/space separation as band legality; dissolves the D16–D31 dual-use (extended-operand Globals live only in Held-signal bands). See § 3.4b. / **FG-Global排除原則。** Reset・Stay Set・NOP を除き Global は前景実行しない。他は窓内専用、FG 遭遇は HALT。時間/空間分離を帯域合法性として強制;D16–D31 二重用途を解消。§ 3.4b 参照。 | **F** (仮確定) |
 | **C3-F24** (v1.1, PROVISIONAL) | **Error HALT (runaway detection).** Rule violations halt at the violating instruction with an error-flag output; escapes = hardware reset / ISMCE live patch / insertion. Base Set↔Loop band-crossing checks are Core-mandatory; excessive debuggability may be parameterized later. Supersedes the "blank shot = no effect" reading of a stray Prog End. See § 3.4b/§ 3.4c list. / **Error HALT（暴走検知）。** 規則違反は違反命令で停止しエラーフラグを出力;脱出 = HWリセット/ISMCE生パッチ/インサーション。帯域跨ぎ検査は Core 必須。迷子 Prog End の「空砲」解釈を置き換える。 | **F** (仮確定) |
-| **C3-F25** (v1.1, PROVISIONAL) | **Stay Start State register.** FG Stay Set writes its own State Number; held until the matching Loop (spans many Stay periods); stacked with the context on nesting (external-stack frame gains a member); reset 0; Core-invisible (Formation may copy out). Queued Base Set loads Base := Stay Start State (time-axis origin) → queued loops return to the stay-period start; enables the single-period self-loop (2^28 pattern). See § 3.4b. / **Stay Start Stateレジスタ。** FG Stay Set が自身の SN を書き込み、対応 Loop まで保持;入れ子でスタック;リセット 0;Core 不可視。Que の Base Set は Base := Stay Start State → Que ループはステイ期間起点へ帰還;単一期間自己ループ（2^28）を可能に。 | **F** (仮確定) |
+| **C3-F25** (v1.1, PROVISIONAL; lifetime corrected 2026-07) | **Stay Start State register.** FG Stay Set writes its own State Number; valid only within that same Stay cycle — a queued Base Set executing in that cycle hands the value to the Base register (discharging it), else the next Stay Set overwrites it. *(Not stacked, not cross-Stay — an earlier text conflated this with the Base register's own long-standing role of carrying a target across many Stay periods to a distant Loop, including nesting; corrected, see Layer 2 trace 2026-07-06_ptsg-stay-start-state-register DP-2.)* Reset 0; Core-invisible (Formation may copy out). Queued Base Set loads Base := Stay Start State (time-axis origin) → queued loops return to the stay-period start; enables the single-period self-loop (2^28 pattern). See § 3.4b. / **Stay Start Stateレジスタ。** FG Stay Set が自身の SN を書き込み、同一 Stay サイクル内でのみ有効——そのサイクル内で Que の Base Set が実行されれば値は Base レジスタへ引き継がれ（用済み）、なければ次の Stay Set が上書き。*（スタック対象でも Stay 跨ぎでもない——以前の文は、多数の Stay を跨いで遠い Loop へ標的を運ぶという Base レジスタ既存の役割〈入れ子を含む〉と混同していた;訂正済み。）* リセット 0;Core 不可視。Que の Base Set は Base := Stay Start State → Que ループはステイ期間起点へ帰還;単一期間自己ループ（2^28）を可能に。 | **F** (仮確定) |
 | **C3-F26** (v1.1, PROVISIONAL) | **Queue capacity: last-write-wins; SN-overwrite HALTs.** Single reservation register; a later reservation replaces an earlier one; overwrite of a queued State-Number reservation = runaway error (HALT + flag). Priority arbitration rejected (cannot rescue intent; loads the timeup path / Fmax). Resolves verification-queue #4. See § 3.4b. / **Que容量: 後勝ち;SN上書きはHALT。** 単一予約レジスタ;後の予約が置換;SN 予約の上書きは暴走エラー。優先順位調停は棄却（意図を救えず timeup 経路に負荷）。検証キュー#4 を解決。 | **F** (仮確定) |
 | **C3-T15** (v1.1, new) | **Nested multi-booking Tie.** Two Base Sets / two Loops in one window (nested self-loops, 2^44-class): (A) forbid — simple, matches the single-register queue; (B) support elegantly — cost unmeasured (a QUEUE_DEPTH parameter may reconcile). Open pending cost measurement. / **入れ子マルチブッキング Tie。** (A) 禁止——単純;(B) 美しく対応——費用未計測（QUEUE_DEPTH パラメータが両立し得る）。費用計測まで未決。 | **T** |
 

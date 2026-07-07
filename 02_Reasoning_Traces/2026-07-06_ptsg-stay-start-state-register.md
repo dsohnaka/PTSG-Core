@@ -8,11 +8,11 @@
 | **Date / 日付** | 2026-07-06 |
 | **Participants / 参加者** | Tsuneo Ohnaka (大中庸生, FPGA Architect, 40+ years; sole design authority); Claude (Anthropic, Claude Opus 4.8, amanuensis / 祐筆) |
 | **Topic / トピック** | Filling the Q-band cells of the command × phase table forced the question: where does a **queued time-axis Loop return to?** Answer: a new register — **Stay Start State** — written by Stay Set with its own State Number. A queued Base Set loads the Base register from it. A jewel falls out: a single Stay period can loop on itself, giving **2^28 clocks** of exact timing with no prescaler. The same deliberation settled **queue capacity**: last-write-wins, except a State-Number-queue overwrite HALTs. / Que時間軸ループの帰還先=新レジスタStay Start State;2^28自己ループ;Que容量=後勝ち＋SN上書きHALT。 |
-| **Status / 状態** | **ADOPTED, PROVISIONAL (仮確定)** — requires RTL (register, stack-frame extension, Base-source mux, overwrite detection). Nested multi-booking = **open Tie**. / 採択、仮確定。入れ子マルチブッキングは未決Tie。 |
+| **Status / 状態** | **ADOPTED, PROVISIONAL (仮確定)** — requires RTL (a same-cycle hand-off register, no stack-frame extension — Base-source mux, overwrite detection). Nested multi-booking = **open Tie**. Lifetime corrected 2026-07 (see DP-2). / 採択、仮確定。入れ子マルチブッキングは未決Tie。寿命は2026-07訂正（DP-2参照）。 |
 | **Original language / 原言語** | Japanese (with English technical terminology) / 日本語（英語技術用語を交える） |
 | **License / ライセンス** | CC0 1.0 Universal (Public Domain) |
 | **Sibling / 姉妹** | `2026-07-06_ptsg-command-phase-table` (the table that forced these questions; the HALT error philosophy applied here). / 表トレース。 |
-| **Forward / 前方** | Verification queue #3 (the stack frame gains a member) and #4 (resolved here as last-write-wins). / 検証キュー#3・#4へ。 |
+| **Forward / 前方** | Verification queue #4 (resolved here as last-write-wins). Queue #3 (two-level stack) is **not** affected — see the 2026-07 lifetime correction. / 検証キュー#4へ。#3は本レジスタの影響を受けない（2026-07寿命訂正参照）。 |
 
 ---
 
@@ -37,9 +37,15 @@ five instructions, a quarter-billion clocks), and how the queue's capacity was r
    loads Base from it (BG Base Set keeps base := current SN — space axis). / 新レジスタ。Que の
    Base Set はここから Base をロード。
 
-3. **Long-lived, stacked, reset-0, Core-invisible.** It survives many Stays until the matching
-   Loop; on nesting it is pushed/popped with the context (the external-stack frame gains a member);
-   a Formation may copy it out for visibility. / 長寿命・スタック対象・リセット0・Core不可視。
+3. **Same-cycle hand-off, reset-0, Core-invisible (corrected 2026-07).** It is valid only within the
+   Stay cycle in which Stay Set wrote it: a (queued) Base Set executing in that cycle carries it into
+   the Base register, discharging it; otherwise the next Stay Set overwrites it. No stack involvement —
+   carrying a target across many Stay periods to a distant Loop remains the Base register's own
+   existing role. A Formation may copy Stay Start State out for visibility. / 同一サイクル引き渡し・
+   リセット0・Core不可視（2026-07訂正）。Stay Set が書いたのと同じ Stay サイクル内でのみ有効: そのサイクル内で
+   （Que の）Base Set が実行されれば Base レジスタへ運ばれ用済みに;さもなければ次の Stay Set が上書きする。
+   スタックへの関与なし——多数の Stay を跨いで遠い Loop へ標的を運ぶのは Base レジスタ既存の役割のまま。
+   Formation はコピーして可視化できる。
 
 4. **The 2^28 pattern.** `StaySet → ProgEnd → BaseSet(Q) → Loop-65536(Q) → Stay-4096`: one stay
    period looping on itself — 12-bit Stay × 16-bit Loop = 2^28 clocks, prescaler-free, exact. /
@@ -76,25 +82,63 @@ keeps the space-axis semantics: base := current SN.
 指しており、反復可能な起点ではない。既存コマンドが書き込む新レジスタ一つが、新オペコードなしで Que ループに
 正しい着地点を与える——ここでもまた、追加ではなく合成。窓内（BG）の Base Set は空間軸意味論（base := 現 SN）を保つ。
 
-### 2. Lifetime, nesting, reset, visibility / 生存期間・入れ子・リセット・可視性
+### 2. Lifetime, hand-off, reset, visibility / 生存期間・引き渡し・リセット・可視性
 
-**Alternatives:** (a) short-lived (cleared at timeup); (b) long-lived until the matching Loop,
-stacked on nesting. **Chosen:** (b). Reset value 0. No Core-level external visibility; a Formation
+> **Correction (2026-07) / 訂正（2026-07）:** the architect's first account of this decision point —
+> recorded below as it was originally stated — described the register as long-lived, surviving many
+> Stay periods until the matching Loop, stacked on nesting. On review, this was found to **conflate
+> the new register with the Base register's own established role**. The corrected decision follows;
+> the withdrawn alternative is kept visible for the record.
+>
+> アーキテクトの当初の説明——以下に原文のまま記す——は本レジスタを、対応する Loop まで多数の Stay 期間を
+> 生き延び入れ子でスタックされる長寿命のものと述べた。レビューの結果、これは**新レジスタを Base レジスタ
+> 自身の既存の役割と混同していた**と判明した。訂正後の決定を以下に示す;撤回された代替案も記録として残す。
+
+**Alternatives:** (a) short-lived (cleared at timeup); (b) *[withdrawn]* long-lived, surviving across
+many Stay periods until the matching Loop, stacked on nesting — the architect's initial statement,
+later found to conflate this register with the Base register's own role; (c) **same-cycle hand-off
+(adopted)** — valid only within the Stay cycle in which Stay Set wrote it: a (queued) Base Set
+executing in that same cycle carries the value into the Base register, discharging the new
+register's job; if no Base Set executes, the next Stay Set simply overwrites it. Carrying a target
+across many Stay periods to a distant Loop remains the Base register's own long-standing role
+(including its stack push/pop on nesting) — unchanged and undisturbed by this register.
+
+**Chosen:** (c), same-cycle hand-off. Reset value 0. No Core-level external visibility; a Formation
 may copy it to a general register.
 
-**Rationale:** A time-axis loop's body is a *sequence* of stay periods; the return target must
-outlive every one of them until the Loop closes the iteration — the long-lived context class,
-alongside the loop counter and base. It is refreshed by the next Base Set at the loop head, and its
-duty ends when the Loop exits. Concrete consequence: **the external-stack context frame gains a
-member** (verification queue #3, two-level nesting, must account for it). Core-invisibility
-preserves the minimal external surface; the Formation copy-out covers diagnostics.
+**Rationale:** The architect's first account of this register's lifetime — surviving across many
+Stay periods until the matching Loop, stacked on nesting — was withdrawn on review as a conflation
+with the Base register's own role, which *already* carries a loop target across an arbitrary number
+of Stay periods and *already* survives nesting via the existing holding-register stack. Once that
+duty is recognized as already and properly owned by Base, Stay Start State's job shrinks to exactly
+the gap Base cannot fill on its own: naming the time-axis origin (the Stay Set's own State Number)
+at the one instant Base needs it — the moment a queued Base Set asks. A same-cycle hand-off is
+sufficient, and is in fact simpler: no stack-frame member, no nested-context POP, no multi-Stay
+survival logic. **Tellingly, the authored table's own entry for queued Base Set ("sets Base :=
+Stay Start State register") already described exactly this hand-off, at the moment of Base Set's
+execution — the table was correct before the narration was.** This is the same shape as the sibling
+trace's C4-F10 finding: the artifact (RTL there, the table here) was ahead of the sentence describing
+it; correcting the sentence is not correcting the design.
 
-**代替案:** (a) 短命（timeup でクリア）;(b) 対応する Loop まで長寿命、入れ子でスタック。**選択:** (b)。
-リセット値 0。Core レベルの外部可視性なし;Formation は汎用レジスタへコピー可。**根拠:** 時間軸ループの本体は
-ステイ期間の*列*であり、帰還先は Loop が反復を閉じるまでその全てを生き延びねばならない——ループカウンタ・
-ベースと並ぶ長寿命コンテキスト級。ループ先頭の次の Base Set で更新され、Loop を抜けた時に用が済む。具体的帰結:
-**外部スタックのコンテキストフレームにメンバーが一人増える**（検証キュー#3・二段入れ子はこれを考慮せねば
-ならない）。Core 不可視は最小外部表面を保ち、Formation コピーが診断需要を賄う。
+**代替案:** (a) 短命（timeup でクリア）;(b) *[撤回]* 対応する Loop まで多数の Stay 期間を生き延び入れ子で
+スタック——アーキテクトの当初の説明、後に Base レジスタ自身の役割との混同と判明;(c) **同一サイクル引き渡し
+（採用）**——Stay Set が書いたのと同じ Stay サイクル内でのみ有効: そのサイクル内で（Que の）Base Set が
+実行されれば値は Base レジスタへ運ばれ、新レジスタの仕事は済む;Base Set が実行されなければ次の Stay Set が
+単に上書きする。多数の Stay を跨いで遠い Loop へ標的を運ぶのは、Base レジスタ既存の役割（入れ子でのスタック
+push/pop を含む）のまま——本レジスタに乱されず不変。
+
+**選択:** (c) 同一サイクル引き渡し。リセット値 0。Core レベルの外部可視性なし;Formation は汎用レジスタへ
+コピー可。**根拠:** アーキテクトの当初の説明——対応する Loop まで多数の Stay 期間を生き延び入れ子でスタック——は
+レビューで、Base レジスタ自身の役割との混同と判明し撤回された。Base は*既に*任意個数の Stay 期間を跨いで
+ループ標的を運び、既存の holding-register スタックで入れ子も*既に*生き延びる。その務めが既に正しく Base に
+属すると認識された途端、Stay Start State の仕事は、Base が自力で埋められない隙間——Base がそれを必要とする
+まさにその瞬間（Que の Base Set が尋ねる瞬間）に時間軸の起点（Stay Set 自身の State Number）を名指すこと——
+だけに縮む。同一サイクル引き渡しで十分であり、実際より単純である: スタックフレームのメンバーなし、入れ子
+コンテキストの POP なし、多 Stay 生存ロジックなし。**特筆すべきは、起草済みの表の Que Base Set の項目
+（「Base := Stay Start State レジスタをセット」）が、Base Set 実行の瞬間という、まさにこの引き渡しを最初から
+記していたことである——表は、ナレーションより先に正しかった。** これは姉妹トレースの C4-F10 の発見と同じ
+かたち: 成果物（そちらでは RTL、こちらでは表）が、それを記述する文より先を行っていた;文を訂正することは
+設計を訂正することではない。
 
 ### 3. The smallest thing it enables — the 2^28 pattern / 最小の可能性——2^28 パターン
 
@@ -235,11 +279,13 @@ the causal chain from violation to symptom, the stronger the case for halting at
 
 ## Resumption Hooks / 再開フック
 
-### Hook A — RTL: the register, the mux, the stack frame / RTL: レジスタ・マルチプレクサ・スタックフレーム
-**Starting question:** In `ptsg_core.v`, add `stay_start_state`; write it in SUB_STAYSET (FG path);
-mux the SUB_BASESET base source by band (Q: Stay Start State; BG: current SN); extend the external-
-stack push/pop frame. What is the frame layout change, and does verification-queue #3's two-level
-test need updating?
+### Hook A — RTL: the register and the mux (no stack change) / RTL: レジスタとマルチプレクサ（スタック変更なし）
+**Starting question:** In `ptsg_core.v`, add `stay_start_state` as a plain register (no stack entry);
+write it in SUB_STAYSET (FG path); mux the SUB_BASESET base source by band (Q: Stay Start State,
+discharging the register for that cycle; BG: current SN). Confirm no change is needed to the
+existing context-save/restore (holding-register) stack — Stay Start State's lifetime never crosses a
+save/restore boundary in a way that would require it to be pushed. Does verification-queue #3's
+two-level test need any change? (Expected: no.)
 
 ### Hook B — Conformance item: the 2^28 pattern (scaled) / 適合項目: 2^28 パターン（縮小版）
 **Starting question:** Build the scaled self-loop item (e.g. Loop-4 × Stay-8): predict the exact
