@@ -78,6 +78,9 @@
 // 009 2026-07-07       Claude Code   Mod : Loop operand/counter width is 16 bits (full D16-D31 extended
 //                                          operand, architect ruling 2026-07-07). loop_cnt / hr_loop /
 //                                          queued_target / loop_counter output / STACK_W widened via LOOP_W.
+// 010 2026-07-07       Claude Code   Mod : Que/BG NOP (and reserved 8-255) advance with state_num+1; band is
+//                                          judged by in_queued_band (architect ruling 2026-07-07). The former
+//                                          prog_end_seen -> S_WAIT transition is removed. Band-template kept.
 //
 // ============================================================================
 
@@ -483,19 +486,25 @@ module ptsg_core #(
                             default: begin
                                 // NOP (sub-op 7) and reserved 8-255: present tsig.
                                 // =============================================================================//
-                                // REVISION HISTORY 001                                                         //
+                                // REVISION HISTORY 001 / 010                                                   //
                                 // 2026-06-14 22:06 Arch. Ohnaka  Add :This defines the execution of NOP        //
                                 //      as a Que command, background command, and foreground command.           //
+                                // 2026-07-07       Claude Code   Mod : Architect ruling — the band test is     //
+                                //      in_queued_band (not prog_end_seen), and a Que/BG NOP simply advances    //
+                                //      (the former transition to S_WAIT entered the wait with a stale          //
+                                //      stay_target and skipped the rest of the Q-band scan). The three-band    //
+                                //      if/else format is kept deliberately: it is the TEMPLATE for extending   //
+                                //      internal sub-opcodes 8-255.                                             //
                                 // =============================================================================//
-                                if (prog_end_seen) begin                     // as Que command (after Prog End) //
-                                    fsm            <= S_WAIT;                                                   //
+                                if (in_queued_band) begin                    // as Que command (after Prog End) //
+                                    state_num      <= state_num + 1'b1;      // scan on; nothing to reserve     //
                                 end                                                                             //
-                                else if (window_open) begin       // as background command (inside Stay window) //  
+                                else if (window_open) begin       // as background command (inside Stay window) //
                                     state_num      <= state_num + 1'b1;                                         //
                                 end                                                                             //
                                 else begin                       // as foreground command (outside Stay window) //
                                     timing_signals <= tsig;                                                     //
-                                    if (presc_tick) begin      // Advance only on prescaler tick (C4-T4 lean B) //
+                                    if (presc_tick) begin      // Advance only on prescaler tick (C4-F8)        //
                                         state_num      <= state_num + 1'b1;      // Advance to next instruction //
                                     end                                                                         //
                                 end                                                                             //
