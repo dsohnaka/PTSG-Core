@@ -15,24 +15,30 @@ testbench.
 
 | File | Purpose |
 |---|---|
-| `ptsg_core.v` | The PTSG-Core top-level module (instruction memory, decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). |
-| `ptsg_core_tb.v` | Self-checking testbench (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
+| `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
+| `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
 
 ```sh
-# Icarus Verilog (https://steveicarus.github.io/iverilog/)
-iverilog -g2012 -o sim ptsg_core.v ptsg_core_tb.v
+# Icarus Verilog (https://steveicarus.github.io/iverilog/) — from this directory:
+iverilog -g2012 -o sim ptsg_core.v ptsg_core_tb.v \
+    ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp sim
 # Expected:
-#   PASS A: blink toggled ...
-#   PASS B: loop exited, loop_counter=0
-#   PASS C: branch advanced on condition
-#   PASS D: call/return reached return-to-after ...
-#   PASS E: indirect jump landed at 7
-#   ALL TESTS PASSED
+#   PASS A..E, ALL TESTS PASSED
+
+# Conformance regression (prescaled timing contracts, PRESCALE=5):
+iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
+    ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
+vvp simc
+# Expected: PASS T1..T7, ALL CONFORMANCE TESTS PASSED
 ```
+
+Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
+`"M10K"` targets Cyclone V `altsyncram` + the In-System Memory Content Editor).
 
 For Quartus / Cyclone V, instantiate `ptsg_core` and initialise the instruction
 memory with a `.mif` (set the `INIT_FILE` parameter for simulation `$readmemh`,
@@ -61,11 +67,15 @@ and drive the external-operation bus (assignments are Formation-specific).
 | `ADDR_W` | 12 | State-number / address width (Fixed by Core) |
 | `DATA_W` | 32 | Instruction word width (Fixed by Core) |
 | `TSIG_W` | 16 | Timing-signal bus width (Fixed by Core) |
-| `CNT_W` | 12 | Stay / loop counter width (C3-V2) |
+| `CNT_W` | 12 | Stay counter width (12-bit operand D4–D15) |
+| `LOOP_W` | 16 | Loop counter/target width — full D16–D31 extended operand (architect ruling 2026-07-07; supersedes the 12-bit C3-V2 reading) |
 | `IMEM_DEPTH` | 256 | Instruction-memory depth (≤ 4096) |
-| `PRESCALE` | 1 | System-clock divider for the time axis (C4-T2 option A, compile-time fixed) |
+| `PRESCALE` | 5 | System-clock divider for the time axis (C4-T2 option A, compile-time fixed) |
 | `PRESC_W` | 32 | Prescaler counter width |
-| `INIT_FILE` | `""` | `$readmemh` init file (simulation) |
+| `INIT_FILE` | `"blinky_with_prescaler.hex"` | `$readmemh` init file (SIM branch) |
+| `INIT_FILE_MIF` | `""` | `.mif` init file (M10K branch) |
+| `IMEM_VENDOR` | `"M10K"` | Instruction-memory branch: `"M10K"` (Cyclone V + ISMCE) or `"SIM"` |
+| `IMEM_EDGE` | `"NEG"` | Half-cycle imem read — effectively combinational for the posedge FSM |
 
 ## Tie resolutions in this implementation / 本実装での Tie 解決
 
@@ -89,7 +99,7 @@ reference resolves them according to the contributor's documented leans:
 | C3-F20 insertion timing | deferred to Stay-timeup inside a Stay window |
 | C4-T1 indirect handshake | Core stalls until `indirect_ready` |
 | C4-T2 prescaler config | compile-time fixed (`PRESCALE`) |
-| C4-T4 Stay Set role | clear/sync only — stay counter ticks only during the wait (jitter-free, lean B) |
+| C4-F10 Stay Set role (was Tie C4-T4) | clear/sync-only; the counter counts prescaler ticks On-Tick from Stay Set through the window (RH003/004/005 + A4 hoist RH011) |
 
 ## Deliberate simplifications / 意図的な簡略化
 
@@ -106,10 +116,10 @@ following are faithful to the canonical patterns but simplified:
   does not spill the previous base to the external stack; nested-loop
   base-stacking is therefore not provided. (Branch / Call / Insertion auto-save
   and external-stack nesting **are** implemented.)
-- **Instruction memory** uses a single-cycle (asynchronous) read model for
-  clarity. On Cyclone V this maps to a registered M10K block; the fetch stage can
-  be pipelined without changing the externally-visible contract (the
-  1-clock-per-opcode Convention C2-T4).
+- **Instruction memory** is the `ptsg_imem` wrapper with `EDGE="NEG"` (half-cycle
+  read): from this posedge FSM's viewpoint it behaves like a combinational read,
+  so the single-phase FSM needs no fetch stage. Foreground commands advance on
+  the prescaler tick (C4-F8), in-window background commands at full clock (C4-F3).
 - The **external-stack `stack_data`** bidirectional bus of Chapter 5 is split
   into uni-directional `stack_wdata` / `stack_rdata` for clean synthesis; a
   Formation may tie them to a single `inout` if preferred.
