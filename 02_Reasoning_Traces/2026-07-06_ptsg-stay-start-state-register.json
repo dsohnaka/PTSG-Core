@@ -1,0 +1,201 @@
+{
+  "metadata": {
+    "title": "PTSG Stay Start State Register — Queued Time-Axis Loops, the 2^28 Pattern, and Queue Capacity",
+    "title_ja": "PTSG Stay Start Stateレジスタ — Que時間軸ループ・2^28パターン・Que容量",
+    "date": "2026-07-06",
+    "session_type": "architect-authored behavior table + cell-by-cell deliberation (amanuensis); new-register design decision",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority",
+        "role_ja": "FPGAアーキテクト（40年以上）；唯一の決定権者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆); no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆；決定権なし"
+      }
+    ],
+    "topic": "Filling the Q-band cells of the command × phase table forced the question: when a QUEUED Loop repeats a time-axis structure, where does it return to? The current State Number is wrong (it sits at the Stay); the loop must return to the start of the stay period. Answer: a new register — Stay Start State — written by Stay Set with its own State Number, held across many Stays until the matching Loop, stacked on nesting, reset to 0, Core-invisible. A queued Base Set loads the Base register FROM this register, making queued time-axis loops land on the stay-period origin. A jewel falls out: a single Stay period can loop on itself — StaySet → ProgEnd → BaseSet → Loop-65536 → Stay-4096 — giving 2^28 clocks of continuous exact timing with no prescaler. The same deliberation settled queue capacity: last-write-wins, except a State-Number-queue overwrite is a runaway error (HALT + error flag); nested multi-booking is left open as a Tie.",
+    "topic_ja": "コマンド×フェーズ表の Q 帯域セルを埋める作業が問いを強いた: Que 実行の Loop が時間軸構造を反復するとき、どこへ戻るのか。現在の State Number は誤り（Stay に座っている）；ループはステイ期間の起点へ戻らねばならない。答えは新レジスタ——Stay Start State——であり、Stay Set が自身の State Number を書き込み、多数の Stay を跨いで対応する Loop まで保持され、入れ子ではスタックされ、リセット値 0、Core では外部不可視。Que 実行の Base Set はこのレジスタから Base レジスタをロードし、Que 時間軸ループをステイ期間の原点に着地させる。宝石が零れ落ちた: 一つの Stay 期間が自分自身をループできる——StaySet → ProgEnd → BaseSet → Loop-65536 → Stay-4096——プリスケーラなしで 2^28 クロックの連続精密タイミング。同じ協議が Que 容量も裁定した: 後勝ち（last-write-wins）、ただし State Number Que の上書きは暴走エラー（HALT＋エラーフラグ）；入れ子マルチブッキングは Tie として保留。",
+    "status": "ADOPTED, PROVISIONAL (仮確定) — requires RTL (new register, stack-frame extension, queued Base Set source mux, overwrite detection). Nested multi-booking = open Tie. / 採択、仮確定——RTL を要する。入れ子マルチブッキングは未決 Tie。",
+    "status_ja": "採択、仮確定。入れ子マルチブッキングは未決 Tie。",
+    "companion_traces": "Sibling: 2026-07-06_ptsg-command-phase-table (the table that forced these questions; the FG-Global exclusion and HALT). The Q-band overwrite HALT belongs to that trace's error philosophy. Forward: verification-queue #3 (two-level external stack — the new register joins the stack frame) and #4 (Prog End queue bandwidth — resolved here as last-write-wins). / 姉妹: コマンド×フェーズ表トレース。前方: 検証キュー#3（スタックフレーム拡張）・#4（本トレースで後勝ちとして解決）。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file can implement the Stay Start State register (lifetime, stacking, reset, visibility), the queued-loop return semantics, the 2^28 pattern, and the queue-capacity rule."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "Where does a queued (time-axis) Loop return to?",
+      "alternatives": [
+        {
+          "label": "The current State Number",
+          "characterization": "reuse the space-axis Base Set semantics: base := SN at Base Set execution — but a queued Base Set executes during the window scan, and the SN there is meaningless for the time axis"
+        },
+        {
+          "label": "The start of the stay period — via a new Stay Start State register",
+          "characterization": "Stay Set records its own State Number; a QUEUED Base Set loads the Base register from it, so the queued Loop lands on the stay-period origin"
+        }
+      ],
+      "chosen": "The stay-period origin, held in a new register: Stay Start State. Stay Set (foreground) writes its own State Number there; a queued Base Set sets Base := Stay Start State.",
+      "rationale": "A time-axis loop repeats a STRUCTURE — StaySet, its window, its Stay — not an instruction position. The only address that names that structure is where it began: the Stay Set's own state. The current SN during the Q-band scan points into the window's interior, which is not a repeatable origin. One new register, written by a command that already exists, gives queued loops a correct landing site with no new opcode — composition over addition, again. (In-window/BG Base Set keeps the space-axis semantics: base := current SN.)"
+    },
+    {
+      "id": "DP-2",
+      "point": "The register's lifetime, nesting, reset value, and visibility",
+      "alternatives": [
+        {
+          "label": "Short-lived (valid only within one window)",
+          "characterization": "cleared at timeup"
+        },
+        {
+          "label": "Long-lived (until the matching Loop), stacked on nesting",
+          "characterization": "survives across many Stays; a nested context must push/pop it via the external stack; reset value 0; not externally visible from the Core"
+        }
+      ],
+      "chosen": "Long-lived: it must survive until the corresponding Loop appears — spanning many Stay periods — and is refreshed by the next Base Set at the loop head. On nesting it is part of the saved context (POPped from the external stack). Reset value 0. No Core-level external visibility; a Formation may copy it to a general register to expose it.",
+      "rationale": "A time-axis loop's body is a SEQUENCE of stay periods; the return target must outlive every one of them until the Loop closes the iteration — so this register belongs to the long-lived context class, alongside the loop counter and base. That classification has a concrete consequence: the external-stack context frame gains a member (relevant to verification-queue #3, two-level nesting). Keeping it Core-invisible preserves the minimal external surface; the Formation copy-out path covers diagnostic needs."
+    },
+    {
+      "id": "DP-3",
+      "point": "What is the smallest thing this register makes possible?",
+      "alternatives": [
+        {
+          "label": "Only distant multi-Stay loops",
+          "characterization": "the register pays off only for long structures"
+        },
+        {
+          "label": "A single Stay period looping on itself — the 2^28 pattern",
+          "characterization": "StaySet → ProgEnd → BaseSet(Q) → Loop-65536(Q) → Stay-4096: the queued Base Set aims at this very stay period's own start, and the queued Loop repeats it 65536 times"
+        }
+      ],
+      "chosen": "Both — and the self-loop is the jewel: one stay period repeating itself. Stay's 12-bit operand × Loop's 16-bit operand = 2^28 clocks of continuous, exact timing with no prescaler.",
+      "rationale": "Because the queued Base Set reads the Stay Start State register, the loop target can be the stay period THAT CONTAINS THE LOOP ITSELF — a structure impossible with SN-based bases. The arithmetic: Stay-4096 (2^12 ticks) × Loop-65536 (2^16 iterations) = 2^28 ≈ 268M clocks ≈ 5.4 s at 50 MHz, timed exactly, prescaler-free, in five instructions. This extends the duty-idiom lesson — expressivity lives in placement, not primitives — into the large: a 28-bit timer emerges from a 12-bit one and a 16-bit one composed through the queue. (The architect: 'it makes you want GUI programming' — the piano-roll IDE pull strengthens.)"
+    },
+    {
+      "id": "DP-4",
+      "point": "Queue capacity: what happens when several commands enter the Q band?",
+      "alternatives": [
+        {
+          "label": "Priority arbitration among Branch/Jump/Return/Call/Loop",
+          "characterization": "a fixed priority picks the winner at timeup"
+        },
+        {
+          "label": "Multi-entry queue memory",
+          "characterization": "store several reservations, fire in order"
+        },
+        {
+          "label": "Last-write-wins, with State-Number-queue overwrite detected as an error",
+          "characterization": "one reservation register; a later write replaces an earlier one; an overwrite of a queued State-Number reservation HALTs with the error flag"
+        }
+      ],
+      "chosen": "Last-write-wins; a State-Number-queue overwrite is detected and HALTs with the error flag.",
+      "rationale": "Priority logic was weighed and rejected on two grounds: it cannot actually rescue the program (whichever entry loses, the program's intent is already violated — priority just picks WHICH violation), and it costs resources and Fmax (arbitration on the timeup path, the very path Build Log #9's registered tick just cleaned). Last-write-wins keeps the queue a single register. But silently discarding a queued STATE-NUMBER reservation is the worst kind of failure: the discarded jump's absence lets execution 'run wild' downstream, far from the cause. Hence the sibling trace's error philosophy applies: overwrite of an SN reservation = structural violation = HALT + flag, scene preserved. (Initially considered as non-fatal error-out; the architect tightened it to HALT precisely because of the chained-consequence risk.)"
+    },
+    {
+      "id": "DP-5",
+      "point": "Nested multi-booking (two Base Sets, two Loops in one window) — allow, forbid, or defer?",
+      "alternatives": [
+        {
+          "label": "Forbid",
+          "characterization": "simple: one reservation, one level; nested time-axis loops are expressed by other means"
+        },
+        {
+          "label": "Support elegantly",
+          "characterization": "'StaySet → ProgEnd → BaseSet → BaseSet → Loop-65536 → Loop-65536 → Stay-4096' — nested self-loops giving 2^44-class timing; requires queue/stack machinery in the Q band"
+        }
+      ],
+      "chosen": "Deferred as an open Tie. Forbidding is the simple, safe default; but 'PTSG-ishly, handling this beautifully is a temptation' (the architect) — the nested self-loop would compose enormous exact timings from the same five-instruction vocabulary.",
+      "rationale": "The Tie is genuine: the simple rule matches the last-write-wins single-register queue, while the beautiful rule would need Q-band reservation stacking whose cost is unmeasured. Per the Tie discipline, both alternatives are recorded with their characterizations, and the decision is left in the arena until the cost side is known (interacts with hook C of the sibling trace: parameterized debuggability suggests parameterized queue depth may be the same move)."
+    },
+    {
+      "id": "DP-6",
+      "point": "Forward: the queue as a data path (Formation)",
+      "alternatives": [
+        {
+          "label": "Queue stays control-only",
+          "characterization": "reservations affect only State Number / loop machinery"
+        },
+        {
+          "label": "Queue copy to general registers (Formation)",
+          "characterization": "a Formation copies queued values into general registers, letting computed results drive timing signals"
+        }
+      ],
+      "chosen": "Recorded as a Formation-side forward link (not a Core change): queue-to-general-register copy would let timing signals be driven by computation results.",
+      "rationale": "The queue's essence is 'a value that takes effect at a time boundary' — which is exactly what a computed timing output needs. Placing the copy mechanism in the Formation keeps the Core queue minimal while opening the door to arithmetic-driven timing (e.g. measured-latency-dependent pulse placement). Noted for the Formation roadmap; no Core commitment."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "A register born from a question the table asked",
+      "summary": "Nobody set out to add a register. The Q-band Base Set cell demanded an answer — 'base := what?' — and every existing answer was wrong for the time axis. The Stay Start State register is the minimal object that makes the cell answerable. This is the healthy direction of feature growth: not capability sought, but a hole in the semantics plane that had to be filled, discovered by the discipline of filling the whole plane."
+    },
+    {
+      "theme_id": "T2",
+      "title": "The time axis gets its own notion of 'here'",
+      "summary": "The space axis names positions by State Number; loops return to an SN. The time axis's natural unit is the stay PERIOD, and its origin is where Stay Set spoke. The new register is exactly that: a program counter for periods rather than instructions. With it, queued Base Set/Loop become the time-axis mirror of the space-axis loop machinery — same commands, different notion of 'here', selected by band."
+    },
+    {
+      "theme_id": "T3",
+      "title": "2^28 from five instructions — composition at scale",
+      "summary": "The duty idioms showed expressivity-by-placement in the small; the self-looping stay period shows it at scale: a 12-bit wait and a 16-bit loop compose into a 28-bit exact timer, prescaler-free, in five instructions. No new counter was built; the composition was unlocked by one register that lets a period aim at itself. The arithmetic of PTSG's minimalism is multiplicative, not additive."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Arbitration rejected on Fmax grounds — the #9 sensibility",
+      "summary": "The queue-capacity ruling shows a design sensibility established in Build Log #9 now acting as a filter: priority arbitration was rejected partly because it loads the timeup path — the path the registered tick had just cleaned. Correctness arguments alone (priority cannot save a violated program) sufficed, but the Fmax argument arrived first-class. Timing-path hygiene has become a standing criterion, not an afterthought."
+    },
+    {
+      "theme_id": "T5",
+      "title": "The severity ladder calibrated by consequence distance",
+      "summary": "Why does an SN-queue overwrite HALT while last-write-wins is otherwise tolerated? Because severity is calibrated by how far the consequence lands from the cause. A discarded SN reservation detonates downstream — 'the behavior can run considerably wild' — where the trigger is unfindable; a replaced non-SN value fails near its use. The error philosophy from the sibling trace thus gains its calibration rule: the longer the causal chain from violation to symptom, the stronger the case for halting at the violation."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "RTL: the register, the mux, the stack frame",
+      "description": "Implement Stay Start State (written by FG Stay Set; reset 0), the queued-Base-Set source mux (Q band: base := StayStartState; BG band: base := SN), and its membership in the external-stack context frame.",
+      "starting_question": "In ptsg_core.v, add stay_start_state; write it in SUB_STAYSET (FG path); mux the SUB_BASESET base source by band; extend the stack push/pop frame. What is the frame layout change, and does verification-queue #3's two-level test need updating?"
+    },
+    {
+      "hook_id": "B",
+      "title": "Conformance item: the 2^28 pattern",
+      "description": "StaySet → ProgEnd → BaseSet(Q) → Loop-65536(Q) → Stay-4096 should be a white-box conformance item (scaled down for simulation, e.g. Loop-4 × Stay-8).",
+      "starting_question": "Build the scaled self-loop conformance item: predict the exact total duration (iterations × Stay ticks × PRESCALE + startup), run white-box, verify the queued Base Set landed on the Stay Set state each iteration. What does the expected.md look like?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Resolve the nested multi-booking Tie",
+      "description": "Forbid (simple) vs elegant nesting (2^44-class). Cost side unmeasured.",
+      "starting_question": "Estimate the LE/Fmax cost of a two-deep Q-band reservation stack on Cyclone V. Does a QUEUE_DEPTH parameter (default 1) satisfy both camps, and how does it interact with the overwrite-HALT rule?"
+    },
+    {
+      "hook_id": "D",
+      "title": "Formation: queue copy to general registers",
+      "description": "Computed-result-driven timing signals via a Formation-side queue-to-register copy.",
+      "starting_question": "Sketch the Formation mechanism: which queue fields are copied, at what edge (trailing, per doctrine), and what is the first demonstrator (e.g. a measured-latency-compensated pulse)?"
+    },
+    {
+      "hook_id": "E",
+      "title": "The piano-roll pull, strengthened",
+      "description": "The self-looping stay period is a natural GUI object (a repeated bar). The architect: 'it makes you want GUI programming.'",
+      "starting_question": "In a piano-roll IDE, how is a self-looping stay period drawn — a repeat bracket over one bar? How do nested repeats (if the Tie resolves toward elegance) map to nested brackets, and what does the 2^28 pattern look like on screen?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "NEW REGISTER (provisional): Stay Start State — written by foreground Stay Set with its own State Number; held until the matching Loop (spanning many Stay periods); refreshed by the next Base Set at the loop head; pushed/popped with the context on nesting (external-stack frame gains a member); reset value 0; Core-invisible (Formation may copy to a general register).",
+    "Queued Base Set semantics: base := Stay Start State (time-axis origin); in-window/BG Base Set keeps base := current SN (space-axis).",
+    "The 2^28 pattern: StaySet → ProgEnd → BaseSet(Q) → Loop-65536(Q) → Stay-4096 — a single stay period looping on itself; 12-bit Stay × 16-bit Loop = 2^28 clocks of continuous exact timing with no prescaler, in five instructions.",
+    "Queue capacity (provisional): last-write-wins on a single reservation register; overwrite of a queued State-Number reservation is a runaway error — HALT + error flag.",
+    "OPEN TIE: nested multi-booking (two Base Sets / two Loops in one window; 2^44-class nested self-loops) — forbid (simple) vs support (beautiful); deferred pending cost measurement.",
+    "Formation forward link: queue copy to general registers → computation-driven timing signals.",
+    "Verification-queue impact: #3 (two-level stack) gains a frame member; #4 (queue bandwidth) is resolved by the last-write-wins ruling."
+  ],
+  "closing_note": "Every loop needs a place called 'back'. On the space axis, 'back' is an address; on the time axis, it turned out to be a moment — the instant a Stay Set spoke and a period began. One small register remembers that moment, and with it the queue learned to aim loops at periods instead of positions: a stay period can now hold itself by the hand and go around again, sixty-five thousand times, five instructions wide, a quarter-billion clocks deep. The register was not invented; it was found, sitting in an empty cell of a table, waiting for someone to ask where a queued loop goes home to. / あらゆるループには「戻る場所」が要る。空間軸では、それは番地だった; 時間軸では、それは瞬間だと判明した——Stay Set が発話し、期間が始まったその瞬間。小さなレジスタ一つがその瞬間を覚え、それによってキューはループを位置でなく期間へ向けることを学んだ: ステイ期間はいま、自分の手を取ってもう一周できる——六万五千回、命令五語の幅で、二億六千万クロックの深さまで。このレジスタは発明されたのではない; 見出されたのだ——表の空白のセルに座って、Que のループはどこへ帰るのかと誰かが問うのを待ちながら。"
+}

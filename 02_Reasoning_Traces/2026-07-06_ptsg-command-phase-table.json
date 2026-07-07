@@ -1,0 +1,199 @@
+{
+  "metadata": {
+    "title": "PTSG Command × Execution-Phase Table — The FG-Global Exclusion Principle and Error HALT",
+    "title_ja": "PTSGコマンド×実行フェーズ表 — FG-Global排除原則とError HALT",
+    "date": "2026-07-06",
+    "session_type": "architect-authored behavior table + cell-by-cell deliberation (amanuensis); pre-implementation completion of command semantics",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority; author of the behavior table",
+        "role_ja": "FPGAアーキテクト（40年以上）；唯一の決定権者；挙動表の起草者"
+      },
+      {
+        "name": "Claude",
+        "name_ja": "Claude",
+        "role": "Anthropic, Claude Opus 4.8 — amanuensis (祐筆): template design, RTL cross-checking, consistency verification; no decision authority",
+        "role_ja": "Anthropic, Claude Opus 4.8 — 祐筆：テンプレート設計・RTL照合・整合性検証；決定権なし"
+      }
+    ],
+    "topic": "Before handing the Core to an implementing agent, the architect defined — exhaustively — how every command handles the Stay counter, the timing signals, the prescaler tick, and the State Number in each of the three execution phases (Foreground / Background / Queued): an 11-command × 3-phase normative table. Filling the plane surfaced a foundational principle: Global commands do NOT execute in the foreground, except three justified exceptions (Reset, Stay Set, NOP); all other FG-Global encounters, and stray Prog Ends, are runaway errors that HALT the machine with an error flag. The deliberation also caught and corrected a specification error the amanuensis had introduced (C4-F10's 'counting begins at Prog End'), restoring the RTL/silicon truth: counting starts at Stay Set and continues On-Tick through the window.",
+    "topic_ja": "コアを実装エージェントへ手渡す前に、アーキテクトは全コマンドが三実行フェーズ（前景／背景／Que）の各々で Stayカウンタ・タイミング信号・プリスケーラティック・State Number をどう扱うかを、11コマンド×3フェーズの規範表として網羅的に定義した。面を埋める過程で基礎的原則が立ち上がった: Global コマンドは、正当化された三つの例外（Reset・Stay Set・NOP）を除き、前景実行しない；それ以外の FG-Global 遭遇と迷子の Prog End は暴走エラーであり、エラーフラグとともに機械を HALT させる。協議はまた、祐筆が導入した仕様誤り（C4-F10「カウントは Prog End で開始」）を捕捉・訂正し、RTL／実機の真実——カウントは Stay Set で開始し窓を通して On-Tick で継続——を回復した。",
+    "status": "ADOPTED as the normative command-semantics table (Layer 1 write-back in the same push). Items requiring new RTL (HALT mechanism, traps, band-crossing checks) are PROVISIONAL (仮確定) pending implementation. / 規範表として採択（同時に Layer 1 書き戻し）。新規RTLを要する項目（HALT機構・トラップ・帯域跨ぎ検査）は実装待ちの仮確定。",
+    "status_ja": "規範表として採択。新規RTL項目は仮確定。",
+    "companion_traces": "Sibling: 2026-07-06_ptsg-stay-start-state-register (the new register, queued time-axis loops, and queue capacity — decided in the same table deliberation). Rests on: the trailing-edge doctrine (its second principle-with-exceptions), the duty-idioms and reset-command-bands traces. / 姉妹: Stay Start Stateレジスタ・トレース。依拠: 後縁主義（二つ目の「原則＋例外」構造）、デューティ流儀、Reset帯域。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file plus the Chapter 3 normative table can determine the legality and exact semantics of any command in any band, and understands why illegality-plus-HALT was chosen over assigning meanings."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "When to define the full command × phase plane — now, or let the implementer fill gaps?",
+      "alternatives": [
+        {
+          "label": "Defer; implement from the existing point-wise definitions",
+          "characterization": "the verified commands (NOP, Jump, StaySet, Reset, ProgEnd, QueJump) are defined; let the implementing agent extrapolate the rest"
+        },
+        {
+          "label": "Complete the plane first (architect-authored table)",
+          "characterization": "an 11-command × 3-phase table, every cell either defined or explicitly illegal, before any implementation request"
+        }
+      ],
+      "chosen": "Complete the plane first. The architect authored the table (on an amanuensis-prepared empty template) before the Claude Code handoff.",
+      "rationale": "Point-wise definitions leave gaps that an implementing agent would fill by inference — and inferred semantics can silently violate the trailing-edge doctrine or the band model. The table makes every gap visible as an empty cell, forcing each to be decided or declared illegal. The template's own effect was diagnostic: 'because it was so clear, previously invisible design questions became visible' (the architect). Making the plane explicit is the precondition for a faithful implementation."
+    },
+    {
+      "id": "DP-2",
+      "point": "The specification said stay counting begins at Prog End; the table and the RTL say it begins at Stay Set. Which is true?",
+      "alternatives": [
+        {
+          "label": "Spec is right; table/RTL wrong",
+          "characterization": "counting begins at Prog End (or the Stay instruction)"
+        },
+        {
+          "label": "Table and RTL are right; the spec sentence is an amanuensis transcription error",
+          "characterization": "Stay Set arms AND starts the count; it continues On-Tick through the whole window; Stay never clears it (RH003/004/005)"
+        }
+      ],
+      "chosen": "Table and RTL are right. C4-F10's wording is corrected to: Stay Set arms and starts; counting continues On-Tick through the window; the Stay instruction never clears the counter.",
+      "rationale": "Cross-checking the table against the committed RTL settled it: RH003 explicitly refuses to clear stay_cnt in OP_STAY ('may have already started counting in StaySet'); RH004/005 increment on window_open && presc_tick. The silicon-verified idiom-D behavior is StaySet-origin counting. The jitter-freedom C4-F10 exists for comes from tick-based counting on the free-running grid (timeup = Nth tick after Stay Set, independent of the window's clock-length) — not from a Prog End origin. The erroneous 'begins at Prog End' sentence was introduced by the amanuensis in the v1.1 write-back and carried a silicon-confirmed label; recorded openly per the negative-data discipline. Lesson: a spec sentence, however plausible, must be diffed against the as-built source before it is carved as Fixed."
+    },
+    {
+      "id": "DP-3",
+      "point": "Illegal command × phase combinations: assign each a meaning, or declare illegality and stop?",
+      "alternatives": [
+        {
+          "label": "Give every combination a defined meaning",
+          "characterization": "no dead cells; everything does something (e.g. stray Prog End = harmless NOP, FG Loop = some loop variant)"
+        },
+        {
+          "label": "Declare unused/inferior combinations illegal; on encounter, HALT with an error flag",
+          "characterization": "a rule-violation is detected where it happens and the machine stops there"
+        }
+      ],
+      "chosen": "Illegality + Error HALT (runaway detection). FG Base Set / Return / Sub-sequence Call / Loop / Prog End, a stray Prog End (outside a window, or a second one in the queue band), and a queue State-Number overwrite all HALT.",
+      "rationale": "Two forces, one conclusion. Debuggability: an undetected structural violation (e.g. a Base Set whose Loop never comes) lets unintended behavior CHAIN — and by the time it is observed, the triggering site is far away and hard to locate; halting at the violation pins the evidence to the scene. Simplicity: assigning meanings to every illegal cell proved 'extremely laborious' during table-filling and would complicate PTSG programming — the meanings would have to be learned. Refusing to give meaning is itself the simplification: for what is unused or has a better alternative, declare it illegal without hesitation and stop. The earlier 'blank shot = no effect' reading of a stray Prog End is superseded by HALT."
+    },
+    {
+      "id": "DP-4",
+      "point": "Which Global commands may execute in the foreground at all?",
+      "alternatives": [
+        {
+          "label": "All Globals FG-legal",
+          "characterization": "every sub-opcode has some foreground meaning"
+        },
+        {
+          "label": "FG-Global exclusion principle: none, except three justified exceptions",
+          "characterization": "Reset, Stay Set, NOP only; Base Set / Return / Call / Loop / Prog End are window-only (BG/Q), trapping to HALT in FG"
+        }
+      ],
+      "chosen": "The FG-Global exclusion principle, with exactly three exceptions: Reset (the strong will to return to the origin even at the cost of continuity), Stay Set (it controls the phase transition itself), NOP (the immediate, cheap way to void any command).",
+      "rationale": "This is the time-axis/space-axis separation sharpened into band legality: state-control machinery (loops, calls, returns, bases) is kept OUT of the time-domain foreground, so the foreground can express only Stay-based timing and Branch/Jump state transitions. With Branch/Jump also usable in BG/Q, a program can be written so the foreground reads as a bare enumeration of Stay times — the timing chart is the visible text. Each exception carries its stated justification, exactly as the trailing-edge doctrine's exceptions do — this is PTSG's second principle-with-exceptions structure, and the casts overlap (Reset and Stay Set appear in both). A structural bonus: the D16-D31 dual-use ambiguity (operand vs timing-signal field) dissolves, because every extended-operand Global now lives only in bands where timing signals are Held — banding itself resolves the field conflict."
+    },
+    {
+      "id": "DP-5",
+      "point": "HALT mechanics: escape routes, external visibility, and Core-vs-Formation placement",
+      "alternatives": [
+        {
+          "label": "Silent halt, hardware-reset-only, Formation-optional",
+          "characterization": "minimal footprint"
+        },
+        {
+          "label": "Observable halt with multiple recovery paths, Core-mandatory for the riskiest checks",
+          "characterization": "error flag output port; escapes via hardware reset, ISMCE live patching (NOP-out / Jump patch), or insertion; Base Set↔Loop band-crossing checks in the Core"
+        }
+      ],
+      "chosen": "Observable and recoverable: an error-flag output port (usable as an insertion trigger and a SignalTap trigger); escape via hardware reset, ISMCE real-time rewriting, or insertion. The Base Set↔Loop band-pairing checks are Core-mandatory. Excessive debuggability may be parameterized later (noted, not decided).",
+      "rationale": "The flag port converts a halt from a mystery into an instrument: SignalTap can trigger on it (the capture shows the scene of the violation), and a Formation can wire it to the insertion mechanism for automated recovery or diagnosis. ISMCE escape is uniquely PTSG-ish: because behavior lives in instruction memory, a halted core can be repaired live over JTAG (NOP-out the offending word, patch a Jump) without recompiling. On Core minimalism: the exclusion principle NET-simplifies the Core (the whole FG semantics of five sub-opcodes disappears, replaced by a trap), and the band-crossing check guards precisely the place where 'the most complicated things happen' — so it earns Core-mandatory status. The future-parameterization note keeps the minimalism concern alive without blocking adoption."
+    },
+    {
+      "id": "DP-6",
+      "point": "What is a Stay encountered inside a window (BG or Q band)?",
+      "alternatives": [
+        {
+          "label": "An error / a nested wait",
+          "characterization": "treat an in-window Stay as illegal or as a second wait"
+        },
+        {
+          "label": "It IS the foreground Stay — the window's terminator",
+          "characterization": "the scan ending at a Stay is the definition of the window's content ending; the Stay is the FG wait state itself"
+        }
+      ],
+      "chosen": "It is the FG Stay: encountering Stay ends the window content (BG band) or the queue-reservation region (Q band) and begins the next stay period. Marked N/A in the table with this meaning attached.",
+      "rationale": "There is no such thing as a background Stay: the Stay is where the State Number rests during the wait, so the scan reaching it is by construction the boundary of the window's program. Writing this as the table's N/A note makes the window's extent formally defined by the Stay itself — the band structure StaySet | BG… | ProgEnd | Q… | Stay is closed at both ends by its two foreground anchors."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "The empty grid as an instrument of discovery",
+      "summary": "The table was built to record decisions, but its first effect was to generate them: 33 cells, each demanding an answer, surfaced questions that point-wise verification had never asked (what IS a background Stay? can a Prog End be queued? who may run in FG at all?). The architect's own words: because the template was so clear, previously invisible design issues became visible — and agonizing. A complete blank plane is a stronger review tool than any checklist, because an empty cell cannot be overlooked."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Refusing to give meaning as the simplification",
+      "summary": "The instinct is that a complete architecture defines everything. The table taught the opposite: forcing a meaning onto every cell was laborious to design and would be burdensome to learn. Declaring the unused and the inferior illegal — and stopping the machine at the violation — is simpler for the Core (a trap instead of five foreground semantics), simpler for the programmer (fewer meanings), and stronger for debugging (the error is pinned where it happened, before consequences chain)."
+    },
+    {
+      "theme_id": "T3",
+      "title": "Band legality as the enforcement of time/space separation",
+      "summary": "The FG-Global exclusion principle converts PTSG's founding philosophy into a checkable rule: state-control machinery cannot appear on the time axis. The foreground now admits only Stay (time), Branch/Jump (transition), and the three justified exceptions — so a disciplined program's foreground reads as a bare sequence of Stay durations: the timing chart is literally the program text. The separation is no longer a style; it is enforced by HALT."
+    },
+    {
+      "theme_id": "T4",
+      "title": "The second principle-with-exceptions — and the same cast",
+      "summary": "PTSG now holds two principle-plus-exceptions structures: the Trailing-Edge Doctrine (exceptions: FG Stay Set and Reset, leading-edge-placed) and the FG-Global exclusion (exceptions: Reset, Stay Set, NOP). The overlapping cast is not coincidence: Reset and Stay Set are the two commands whose job is to mark beginnings — of the whole machine, or of a phase — and beginnings are exactly where both principles must bend, each exception carrying its explicit justification. A principle is best understood through the exceptions it makes safe; PTSG's exceptions now form a coherent family."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Debuggability as a first-class design force",
+      "summary": "The HALT decision was driven not by correctness theory but by the anatomy of debugging pain: unintended behavior that chains, and a triggering site that recedes from the observation point. Halting at the violation, with a flag that SignalTap can trigger on and insertion can react to, and with ISMCE live-patching as the repair path, turns the failure into a captured, inspectable, repairable scene. For an architecture whose value proposition is 'behavior lives in editable memory,' the natural error philosophy is: stop where it broke, and let the memory be fixed in place."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "RTL: implement the traps and the HALT state",
+      "description": "FG Base Set/Return/Call/Loop/Prog End → HALT; stray Prog End (outside window; second in Q band) → HALT; queue SN-overwrite → HALT; error-flag output port; halt exited only by hardware reset (with ISMCE/insertion as repair paths).",
+      "starting_question": "In ptsg_core.v, design the S_HALT state and the trap conditions listed in the Chapter 3 normative table. What is the minimal decode addition, and how is the error flag registered and exported?"
+    },
+    {
+      "hook_id": "B",
+      "title": "RTL conformance: window tick-increment on every path",
+      "description": "RH005's window_open && presc_tick increment appears on the Global-execution and OP_STAY paths; the table requires the stay counter to continue On-Tick during ANY in-window command, including BG Branch/Jump.",
+      "starting_question": "Verify (white-box) that stay_cnt increments on presc_tick during BG Branch and BG Jump execution while window_open. If not, hoist the increment to a single unconditional window_open && presc_tick rule outside the opcode case. Does the hoist change any verified timing?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Parameterizing debuggability",
+      "description": "The architect noted that excessive debuggability (notably the band-crossing pairing checks) may later become parameter-selectable, once its cost is measured.",
+      "starting_question": "Measure the LE and Fmax cost of the HALT machinery and the Base Set↔Loop pairing checks on Cyclone V. At what cost does a DEBUG_CHECKS parameter earn its place, and which checks must remain unconditional?"
+    },
+    {
+      "hook_id": "D",
+      "title": "HALT external protocol (Chapter 5 / Formation)",
+      "description": "The error flag port needs a Chapter 5 pin definition and a Formation-side story: SignalTap trigger wiring, insertion-based recovery, ISMCE repair procedure.",
+      "starting_question": "Draft the Chapter 5 error-flag interface (width, polarity, timing relative to the violating fetch) and a Formation recipe for automated halt→insert→diagnose→ISMCE-patch→resume flows."
+    },
+    {
+      "hook_id": "E",
+      "title": "Conformance items for the illegality table",
+      "description": "Every HALT cell in the normative table is a testable claim; the conformance suite should eventually cover them.",
+      "starting_question": "Design conformance items that provoke each trap (FG Loop, stray Prog End, queue overwrite, unpaired Base Set) and verify the halt, the flag, and the preserved scene (SN held at the violation). Which existing queue items do these fold into?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "The 11-command × 3-phase normative behavior table (architect-authored), adopted into Chapter 3 as the definitive command × band semantics, including the State Number column.",
+    "PRINCIPLE (provisional): FG-Global exclusion — Global commands do not execute in the foreground except Reset, Stay Set, and NOP, each with a stated justification. Base Set / Return / Sub-sequence Call / Loop / Prog End are window-only.",
+    "Error HALT (provisional): FG-illegal Globals, stray Prog End (outside a window; second in the Q band), and queue State-Number overwrite all halt the machine with an error-flag output; escapes = hardware reset, ISMCE live patch, insertion. Base Set↔Loop band-crossing checks are Core-mandatory; excessive debuggability may be parameterized later.",
+    "CORRECTION: C4-F10's wording fixed — Stay Set arms AND starts the count; counting continues On-Tick through the window; Stay never clears it (per RH003/004/005 and the silicon-verified idiom D). The 'begins at Prog End' sentence was an amanuensis transcription error, recorded openly.",
+    "An in-window Stay is the FG Stay: it terminates the window content / queue region and begins the next stay period (no such thing as a background Stay).",
+    "Extended-operand dual-use dissolved structurally: extended-operand Globals are legal only in bands where timing signals are Held.",
+    "FG legal set: Stay, Branch, Jump, Global·Reset, Global·StaySet, Global·NOP. A disciplined foreground reads as a bare sequence of Stay durations.",
+    "Reset refinements: Q-band Reset fires at Stay-timeup (not at encounter); Reset drives its own timing_signals field (RTL change from clear-to-0), enabling a reservation-notification signal.",
+    "Descriptive, not normative: FG commands do not write stay_cnt<=0 (the counter is already 0 outside a window); no RTL change (A8)."
+  ],
+  "closing_note": "A machine is defined as much by what it refuses as by what it does. PTSG's foreground now refuses everything that is not time: the loops, the calls, the bases all live behind the window, and if one strays onto the time axis the machine does not improvise — it stops, raises a flag, and preserves the scene. What remains in the foreground is what a timing chart shows: durations, transitions, and the three commands allowed to mark a beginning. The table that recorded these decisions also produced them; thirty-three small boxes asked their questions, and the architecture answered by learning to say no. / 機械は、何をするかと同じだけ、何を拒むかで定義される。PTSG の前景はいま、時間でないものすべてを拒む: ループも、コールも、ベースもすべて窓の裏に住み、もし一つでも時間軸に迷い出れば、機械は取り繕わない——停止し、旗を揚げ、現場を保存する。前景に残るのはタイミングチャートが示すもの: 持続と、遷移と、始まりを標すことを許された三つの命令。これらの決定を記録した表は、決定を生み出した表でもあった; 三十三の小さな枠がそれぞれの問いを発し、アーキテクチャは「否」の言い方を学ぶことで答えたのである。"
+}

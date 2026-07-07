@@ -60,9 +60,15 @@ and **does** require RTL work and is not yet silicon-verified.
 ### A3 — C4-F10: Stay Set = clear/sync-only (was Tie C4-T4 / C3-T11) / Stay Set = クリア／同期のみ
 
 - **Chapter / 章:** Ch4 § 4.9, table § 4.12; Ch3 § 3.2 revised; Ch3 table C3-T11→C4-F10.
-- **Spec now says / 仕様の現記述:** Stay Set arms the stay counter (resets to 0, opens the window) but counting begins at **Prog End** (or the Stay instruction if no Prog End), making the wait independent of background-program length (jitter-free).
+- **Spec now says (wording corrected 2026-07) / 仕様の現記述（2026-07 訂正）:** Stay Set arms the stay counter (resets to 0, opens the window) **and the counter counts prescaler ticks from Stay Set onward (On-Tick), through the window; the Stay instruction never clears it** (RH003/004/005). Stay-timeup = the Nth tick after Stay Set on the free-running grid — independent of the background-program's clock-length (jitter-free). *(An earlier text mis-stated "counting begins at Prog End" — corrected per the as-built RTL.)*
 - **Source / 出典:** Layer 2 `2026-06-22_ptsg-duty-idioms`; Layer 4 idiom D (silicon, internal registers `window_open`/`prog_end_seen`/`queued_valid`).
 - **RTL implication / RTL 含意:** RH002/003/004/005 implement the carry-through (no `stay_cnt<=0` clear in `OP_STAY`; `stay_cnt` increments from the window). **Verify** Stay Set arms-without-starting and that counting begins at Prog End/Stay. No change expected.
+
+### A4 — Window tick-increment on every in-window path / 窓内全経路での tick インクリメント
+
+- **Chapter / 章:** Ch3 § 3.2 (corrected), § 3.4b normative table (BG rows: "Continue counting … when On-Tick").
+- **Spec now says / 仕様の現記述:** while the window is open, the stay counter increments on **every** prescaler tick, regardless of which in-window command is executing — including BG Branch and BG Jump.
+- **RTL implication / RTL 含意:** RH005's `window_open && presc_tick` increment appears on the Global-execution and OP_STAY paths. **Verify** (white-box) that `stay_cnt` also ticks during BG Branch/Jump execution; if any in-window path lacks it, **hoist the increment to a single unconditional `window_open && presc_tick` rule** outside the opcode case. Report whether the hoist changes any verified timing.
 
 > **Note:** A1–A3 should already pass conformance against the committed RH001–RH008 RTL. If any does
 > not, that is a finding to report, not a silent fix. / A1–A3 はコミット済み RH001–RH008 RTL に対して
@@ -108,6 +114,36 @@ and **does** require RTL work and is not yet silicon-verified.
 
 ---
 
+### C4 — BG/Q Stay Set (re-kick) / BG/Q の Stay Set（re-kick）
+
+- **Chapter / 章:** Ch3 § 3.4b normative table (Stay Set BG/Q rows).
+- **Spec now says / 仕様の現記述:** a **BG** Stay Set re-arms the running count mid-window ("Continue counting **with reset**"), tick-synchronized (SN advances on the tick) — the variable-length-Stay re-kick. A **Q** Stay Set is registered during the scan (semantics of its firing to be exercised in verification).
+- **RTL implication / RTL 含意:** **not yet implemented** (architect-confirmed). Add the BG re-kick path (stay_cnt reset + tick-synchronized advance inside the window) and define/implement the queued Stay Set behavior.
+
+### C5 — Error HALT machinery / Error HALT 機構
+
+- **Chapter / 章:** Ch3 § 3.4b (C3-F23/F24); Ch2 § 2.8 band-legality note.
+- **Spec now says / 仕様の現記述:** FG Base Set/Return/Call/Loop/Prog End → HALT; stray Prog End (outside a window; second in the Q band) → HALT; queued SN-overwrite → HALT (C8); unpaired Base Set↔Loop across bands → HALT. SN holds at the violating instruction; an **error-flag output port** is raised (SignalTap + insertion trigger). Exit: hardware reset (ISMCE live patch / insertion as repair paths).
+- **RTL implication / RTL 含意:** add an **S_HALT** state, the trap decodes above, the Base Set↔Loop band-pairing tracking, and the error-flag output. Keep the flag registered (trailing-edge discipline). Consider (do not yet implement) a DEBUG_CHECKS parameter for the costlier checks.
+
+### C6 — Stay Start State register + stack-frame extension / Stay Start Stateレジスタ＋スタックフレーム拡張
+
+- **Chapter / 章:** Ch3 § 3.4b (C3-F25).
+- **Spec now says / 仕様の現記述:** FG Stay Set writes its own State Number to **stay_start_state**; held until the matching Loop; **queued Base Set loads Base := stay_start_state** (BG Base Set keeps Base := current SN); part of the saved context on nesting (external-stack frame gains a member); reset 0; Core-invisible.
+- **RTL implication / RTL 含意:** add the register; write in SUB_STAYSET (FG path); **mux the SUB_BASESET base source by band**; extend the stack push/pop frame layout (affects verification-queue #3). Scaled 2^28 self-loop conformance item recommended (e.g. Loop-4 × Stay-8).
+
+### C7 — Reset: queued firing + own-tsig drive / Reset: Que発火＋自tsig駆動
+
+- **Chapter / 章:** Ch3 § 3.4a, § 3.4b table (Reset rows).
+- **Spec now says / 仕様の現記述:** a Q-band Reset is **registered at encounter and fires at Stay-timeup** (SN → 0 at firing), per C3-F22. In all bands Reset **drives its own timing_signals field** (enables a "Reset reserved" notification signal; a program not wanting an indeterminate output sets it equal to the Stay's value).
+- **RTL implication / RTL 含意:** current RTL executes Reset immediately and **clears timing_signals to 0** — change to (a) route Q-band Reset through the reservation register, firing at timeup; (b) drive `timing_signals <= tsig` (the instruction's own field) instead of clearing.
+
+### C8 — Queue: last-write-wins + SN-overwrite HALT / Que: 後勝ち＋SN上書きHALT
+
+- **Chapter / 章:** Ch3 § 3.4b (C3-F26; Tie C3-T15 open).
+- **Spec now says / 仕様の現記述:** single reservation register, last-write-wins; overwriting a queued **State-Number** reservation → HALT + error flag. Nested multi-booking (two Base Sets/Loops) is an open Tie — do **not** implement queue depth >1.
+- **RTL implication / RTL 含意:** add overwrite detection on the SN-reservation register (a second SN-class reservation while `queued_valid` holds an SN-class entry → trap to S_HALT). Non-SN reservations may simply replace.
+
 ## D. Clarification / correction (no RTL) / 明確化・訂正（RTL なし）
 
 ### D1 — C4-F11: Queued firing at the trailing edge (was Tie C4-T3) / キュー発火は後縁（旧 Tie C4-T3）
@@ -132,18 +168,31 @@ and **does** require RTL work and is not yet silicon-verified.
 | **C3-F21** | Ch3 §3.4a | **Fixed (仮確定)** | reset trace | **ensure Reset never clears `presc_cnt`** |
 | **C3-F22** | Ch3 §3.4a | **Fixed (仮確定)** | reset trace | route Reset through band machinery |
 | **C3-V4** | Ch3 §3.4a | **Convention (仮確定)** | reset trace | optional Formation opt-in |
+| **C3-F23** | Ch3 §3.4b | **Fixed (仮確定)** | table trace | trap FG Base Set/Return/Call/Loop/ProgEnd |
+| **C3-F24** | Ch3 §3.4b | **Fixed (仮確定)** | table trace | S_HALT + error flag + pairing checks |
+| **C3-F25** | Ch3 §3.4b | **Fixed (仮確定)** | register trace | stay_start_state + Base mux + stack frame |
+| **C3-F26** | Ch3 §3.4b | **Fixed (仮確定)** | register trace | SN-overwrite detect → HALT; last-write-wins |
+| **C3-T15** | Ch3 §3.4b | **Tie (open)** | register trace | none (keep queue depth = 1) |
+| **C4 (item)** | Ch3 §3.4b | **仮確定** | table | BG Stay Set re-kick; Q Stay Set |
+| **A4 (item)** | Ch3 §3.2/3.4b | verify | table trace | window tick on BG Branch/Jump paths |
 | **C4-F11** | Ch1 §1.4a / Ch4 §4.9 | Fixed (v1.1, was C4-T3) | trailing-edge doctrine | verify queued firing + match pulse are trailing-edge |
 
 ---
 
 ## F. Suggested order for the Verilog implementer / Verilog 実装者への推奨順序
 
-1. **Conformance pass (A1–A3):** confirm the committed RTL implements foreground-prescaling, the
-   free-running no-wait-entry-reset prescaler, and Stay-Set clear/sync-only. Report any deviation.
+1. **Conformance pass (A1–A4):** confirm the committed RTL implements foreground-prescaling, the
+   free-running no-wait-entry-reset prescaler, Stay-Set On-Tick counting (corrected C4-F10), and the
+   window tick-increment on every in-window path (A4 — hoist if any path lacks it). Report deviations.
 2. **C3-F21 guarantee:** audit all `presc_cnt` reset paths; ensure the Reset *command* never clears it.
 3. **C3-F22:** route the Reset command through the foreground/background/queued band dispatch.
 4. **C3-V4:** only if requested — add a bounded Formation-level opt-in for a prescaler-resetting Reset.
 5. **C4-F11** (was C4-T3): verify queued firing and the match pulse are on the **trailing edge** (count-completion); correct any leading-edge firing. Use the Trailing-Edge Doctrine as the global sanity lens.
+6. **C5 HALT machinery:** S_HALT, traps (FG-illegal Globals; stray Prog End; unpaired Base Set↔Loop), error-flag port.
+7. **C6 Stay Start State register:** register + queued-Base-Set mux + stack-frame extension; scaled 2^28 conformance item.
+8. **C7 Reset revisions:** queued firing at timeup; drive own tsig (stop clearing to 0).
+9. **C8 queue rules:** last-write-wins; SN-overwrite → HALT. Keep queue depth = 1 (Tie C3-T15 open).
+10. **C4 BG/Q Stay Set:** implement the re-kick (BG) and define/implement queued Stay Set.
 
 1. **適合パス（A1–A3）:** コミット済み RTL が前景プリスケールド化・待機突入非リセットの自由走行
    プリスケーラ・Stay Set クリア／同期のみを実装することを確認。逸脱は報告せよ。
@@ -151,3 +200,8 @@ and **does** require RTL work and is not yet silicon-verified.
 3. **C3-F22:** Reset コマンドを前景／背景／Que 帯域ディスパッチに通す。
 4. **C3-V4:** 要請があれば——プリスケーラをリセットする Reset の境界付き Formation opt-in を追加。
 5. **C4-F11**（旧 C4-T3）: キュー発火と一致パルスが**後縁**（カウント完了）にあることを検証し、前縁発火があれば修正。後縁主義を全体の健全性レンズとして用いよ。
+6. **C5 HALT 機構:** S_HALT・トラップ群（FG 違法 Global;迷子 Prog End;不対 Base Set↔Loop）・エラーフラグポート。
+7. **C6 Stay Start State レジスタ:** レジスタ＋Que Base Set のマルチプレクサ＋スタックフレーム拡張;縮小 2^28 適合項目。
+8. **C7 Reset 改訂:** timeup での Que 発火;自 tsig 駆動（0 クリアをやめる）。
+9. **C8 Que 規則:** 後勝ち;SN 上書き → HALT。キュー深度は 1 のまま（Tie C3-T15 未決）。
+10. **C4 BG/Q Stay Set:** re-kick（BG）の実装と Que Stay Set の定義・実装。

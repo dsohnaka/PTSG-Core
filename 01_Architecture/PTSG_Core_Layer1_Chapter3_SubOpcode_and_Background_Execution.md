@@ -63,7 +63,9 @@ The chapter's three principal contributions are:
 
 **Definition.** The **Stay window** is the period during which the Core's stay counter is active: it **opens** when **Stay Set** (Global sub-op 002, Chapter 2 § 2.8) executes and **closes** at **Stay-timeup** (when the stay counter reaches the value specified by the following Stay opcode's operand). All Global instructions encountered during this window are subject to background execution semantics; all non-Global instructions are processed as defined in Chapter 2.
 
-> **v1.1 refinement (C4-F10 — Stay Set = clear/sync-only).** Stay Set *arms* the stay counter (resets it to 0 and opens the window for background-execution scoping) but the counter does **not** begin counting at Stay Set. Counting begins at **Prog End** (or, if no Prog End is present, at the Stay instruction). This makes the wait equal to the Stay operand (in prescale ticks) plus a fixed startup latency, **independent of the background-program length** — eliminating the jitter that immediate-start (v1.0) would have introduced. The window-scoping rule (which Globals are background-executed) is unchanged: it is still "encountered between Stay Set and Stay-timeup."
+> **v1.1 refinement (C4-F10 — Stay Set = clear/sync-only), wording corrected 2026-07.** Stay Set *arms* the stay counter (resets it to 0 and opens the window) **and the counter begins counting immediately, on prescaler ticks (On-Tick)**: while the window is open, `stay_cnt` increments on every prescaler tick, through the background program, through Prog End, into the wait. The Stay instruction **never clears** the counter (RH003); it only supplies the target. Stay-timeup is therefore the **Nth prescaler tick after Stay Set** — a point on the free-running tick grid, **independent of the background-program's length in clocks**: that grid-anchoring, not a Prog-End origin, is what eliminates the jitter (C4-F10's purpose). The window-scoping rule (which Globals are background-executed) is unchanged: "encountered between Stay Set and Stay-timeup."
+>
+> *Correction note:* an earlier v1.1 text stated "counting begins at Prog End (or the Stay instruction)". That sentence was an amanuensis transcription error, contradicting the as-built RTL (RH003/004/005: no clear in OP_STAY; increment on `window_open && presc_tick`) and the silicon-verified idiom-D behavior. Corrected here; reasoning archived in Layer 2 trace `2026-07-06_ptsg-command-phase-table` (DP-2). / *訂正注:* 以前の v1.1 文は「カウントは Prog End（または Stay 命令）で開始」と述べたが、これは祐筆の転記誤りであり、as-built RTL（RH003/004/005: OP_STAY でクリアせず;`window_open && presc_tick` でインクリメント）および実機検証済みの流儀 D の挙動と矛盾していた。ここに訂正する;推論は Layer 2 トレースに保管。
 
 **定義。** **Stayウィンドウ**はコアのステイカウンタが活動的である期間である: それは **Stay Set** (Global サブop 002、第2章 § 2.8) が実行される時に始まり、**Stay-timeup**(ステイカウンタが続くStayオペコードのオペランドで指定された値に達する時)で終わる。本ウィンドウ中に遭遇するすべての Global 命令は裏実行意味論の対象である；すべての非 Global 命令は第2章で定義されたように処理される。
 
@@ -82,7 +84,7 @@ The chapter's three principal contributions are:
 
 | Position | Role |
 |---|---|
-| State N | **Window opener.** Stay Set executes; the stay counter is **armed** (reset to 0 and opened) but does **not** start counting yet (C4-F10 — counting begins at Prog End / the Stay instruction); timing signals enter "hold mode" (the value being held is specified below). / **ウィンドウ開設者。** Stay Set が実行される；ステイカウンタは**アーム**される(0 にリセットされ開かれる)が、まだカウントを**開始しない**(C4-F10——カウントは Prog End／Stay 命令で始まる)；タイミング信号が「保持モード」に入る。 |
+| State N | **Window opener.** Stay Set executes; the stay counter is **armed (reset to 0) and starts counting on prescaler ticks** (C4-F10, corrected — On-Tick counting from Stay Set, through the window; the Stay instruction never clears it); timing signals enter "hold mode" (the value being held is specified below). / **ウィンドウ開設者。** Stay Set が実行される；ステイカウンタは**アーム（0 にリセット）され、プリスケーラティックでカウントを開始する**(C4-F10 訂正——Stay Set から窓を通して On-Tick カウント;Stay 命令は決してクリアしない)；タイミング信号が「保持モード」に入る。 |
 | States N+1 to N+k−1 | **Background-execution band.** Each Global encountered here is processed under background-execution semantics (§§ 3.3–3.5). Each state takes 1 clock to advance through. Non-Global instructions placed here are unusual but not prohibited; they execute as defined in Chapter 2. / **裏実行帯域。** ここで遭遇する各 Global は裏実行意味論(§§ 3.3-3.5)の下で処理される。各ステートは進むために 1 クロックを要する。ここに置かれた非 Global 命令は珍しいが禁止されない；第2章で定義されたように実行される。 |
 | State N+k | **Window closer.** Stay opcode is reached. Core halts at this state until stay counter = M. Any pending internal-mode reserved operations execute (scheduled backward from this moment). Any pending external-mode operations must have completed (constraint, § 3.6). When all complete, window closes; Core advances to N+k+1. / **ウィンドウ閉鎖者。** Stay オペコードに到達する。コアはステイカウンタ = M までこのステートで停止する。任意の保留中の内部モード予約演算が実行される(この瞬間から後方スケジュール)。任意の保留中の外部モード演算は完了していなければならない(制約、§ 3.6)。すべて完了した時、ウィンドウは閉じる；コアは N+k+1 に進む。 |
 
@@ -272,6 +274,198 @@ Like any command, Reset's behavior is selected by the band it runs in (the gener
 The Core forbids prescaler reset by principle (C3-F21). A **Formation MAY opt in** to a prescaler-resetting Reset where its application genuinely needs one — thereby also accepting the loss of external synchronizability that the deviation implies. A standalone (non-slave) PTSG that will never be externally synchronized loses nothing by resetting its own prescaler; a **slave configuration must structurally never** be able to. The opt-in belongs at the Formation boundary so each application makes the choice with full knowledge of its own synchronization role. This is the Core-Formation separation acting as a release valve: the Core stays synchronizable-by-default, the rare contrary need is met outward.
 
 コアは原則としてプリスケーラ・リセットを禁じる（C3-F21）。**Formation は**、その応用が本当に必要とする場合、プリスケーラをリセットする Reset を**選択してよい**——その際、逸脱が含意する外部同期可能性の喪失も受け入れる。外部同期されない単独（非スレーブ）PTSG は自分のプリスケーラをリセットしても何も失わない；**スレーブ構成は構造的に決してそれをできてはならない**。opt-in は Formation 境界に属し、各応用は自身の同期役割を完全に把握した上で選択する。これは Core-Formation 分離が安全弁として働くものである: コアは既定で同期可能なまま、稀な反対の必要は外で満たされる。
+
+---
+
+## 3.4b Command × Execution-Phase Semantics — The Normative Table (v1.1, PROVISIONAL in part / 一部仮確定) / コマンド×実行フェーズ意味論 — 規範表
+
+> **This table is normative.** Authored by the architect (2026-07) as the complete definition of how
+> every command handles the stay counter, the timing signals, the prescaler tick, and the State
+> Number in each execution phase — Foreground (FG), Background (BG, the immediate band between Stay
+> Set and Prog End), Queued (Q, the reservation band between Prog End and the Stay). Cells marked
+> **HALT** are runaway errors (§ 3.4c). Items requiring new RTL are PROVISIONAL (仮確定). Reasoning:
+> Layer 2 traces `2026-07-06_ptsg-command-phase-table` and `2026-07-06_ptsg-stay-start-state-register`.
+>
+> **本表は規範である。** アーキテクトが起草（2026-07）した、全コマンドが各実行フェーズ——前景（FG）・背景
+> （BG、Stay Set と Prog End の間の即時帯域）・Que（Q、Prog End と Stay の間の予約帯域）——で Stayカウンタ・
+> タイミング信号・プリスケーラティック・State Number をどう扱うかの完全定義。**HALT** のセルは暴走エラー
+> （§ 3.4c）。新規 RTL を要する項目は仮確定。推論は上記 Layer 2 トレース二本に保管。
+
+**Reading keys / 読み方:** "when On-Tick" = the stay counter increments on prescaler ticks while the
+window is open (C4-F10, corrected). Edge "Leading※" = the two sanctioned leading-edge exceptions of
+the Trailing-Edge Doctrine (Ch1 § 1.4a). An in-window **Stay** is not a background command: it is the
+FG Stay itself — the terminator of the window content (BG) or of the queue region (Q), and the start
+of the next stay period. / 「when On-Tick」= 窓が開いている間、ステイカウンタはプリスケーラティックで
+インクリメント（C4-F10 訂正版）。縁「Leading※」= 後縁主義の公認された二つの前縁例外（第1章 § 1.4a）。窓内の
+**Stay** は背景コマンドではない: それは FG の Stay そのもの——窓内容（BG）ないし Que 領域（Q）の終端子であり、
+次のステイ期間の開始である。
+
+| Command / コマンド | Phase | Stay Counter / Stayカウンタ | Timing Signals / タイミング信号 | Prescaler Tick / ティック | State Number / ステート番号 | Edge / 縁 | Legal | Notes / 備考 |
+|---|---|---|---|---|---|---|---|---|
+| **Stay** | FG | Continue counting (no reset) | Driven (changes per instruction) | Consumes one tick (waits for next) | Stay Counter満了&tickを待ってインクリメント | Trailing | Legal | Stay's wait scales with the prescaler (§4.8) — but the exact per-tick handling here is exactly what this table should nail down. |
+|  | BG | N/A | N/A | N/A | N/A | Trailing | N/A | それはFGのStayであり、Stay Windowの強制的な終わりと、次のステイ期間の始まりを意味します。 |
+|  | Q | N/A | N/A | N/A | N/A | Trailing | N/A | それはFGのStayであり、Que待機期間の終わりと次のステイ期間の始まりを意味します。 |
+| **Branch** | FG | No effect (untouched すでにReset) | Driven (changes per instruction) | Consumes one tick (waits for next) | tickを待つ-><br>Condition trueの場合:インクリメント<br>Condition failの場合:opeland+現State Numberに更新される | Trailing | Legal |  |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックで-><br>Condition trueの場合:インクリメント<br>Condition failの場合:opeland+現State Numberに更新される | Trailing | Legal |  |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックで-><br>インクリメントされる（同時にoperandをque targetにセット） | Trailing | Legal | Queターゲットが実行されるときにConditionが評価され、相対State Numberが計算される |
+| **Jump** | FG | No effect (untouched すでにReset) | Driven (changes per instruction) | Consumes one tick (waits for next) | tickを待ってopelandが示すアドレスに更新される | Trailing | Legal |  |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでoperandが示すアドレスに更新される | Trailing | Legal |  |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメントされる（同時にoperandをque targetにセット） | Trailing | Legal |  |
+| **Global · Reset** | FG | No effect (untouched すでにReset) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックで0にセット | Leading※ | Legal | Leading-edge exception (Trailing-Edge Doctrine, Ch1 §1.4a); depends on preceding command ending on a prescaler tick. Bands: §3.4a (PROVISIONAL). Never resets presc_cnt (C3-F21). |
+|  | BG | Arm (reset to 0, don't start) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックで0にセット | Trailing | Legal | "Staff meal" band — emergencies only (§3.4a, PROVISIONAL). Never resets presc_cnt (C3-F21). |
+|  | Q | Arm (reset to 0, don't start) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（Que実行時、0にセット） | Trailing | Legal | Effectively prescaled — fires at Stay-timeup (§3.4a, PROVISIONAL). Never resets presc_cnt (C3-F21). |
+| **Global · Base Set** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | Error HALT（暴走検知） |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>(同時にState NumberをBaseレジスタにセット） | Trailing | Legal | BGプログラムウィンドウ内でのBase Setが実行されたにもかかわらず対応するLoopコマンドを抜けないままProg Endに至った場合はエラーHALTする。 |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（同時に、Stay Start StateレジスタをBaseレジスタにセット） | Trailing | Legal | Stay Start Stateレジスタは、Stay SetコマンドがあったState Number。Que実行による表実行（時間処理）のループはこの起点に戻る必要がある。<br>対応するLoopコマンドがBGウィンドウ内にある場合はエラーHALTする。 |
+| **Global · Stay Set** | FG | Arm (reset to 0, and start counting) | Driven (changes per instruction) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Leading※ | Legal | C4-F10 (corrected): the counter starts here and counts On-Tick through the window; Stay never clears it. Leading-edge exception (Ch1 §1.4a).<br>【追加機能 → C3-F25】Stay Setが行われたState Numberは、そのStay期間中（対応するLoopまで）、Stay Start Stateレジスタに保持される。 |
+|  | BG | Continue counting (with reset) | Held (unchanged / frozen) | Consumes one tick (waits for next) | tickを待ってインクリメント | Trailing | Legal |  |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Trailing | Legal |  |
+| **Global · Return** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | Error HALT（暴走検知） |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでReturn State Number | Trailing | Legal |  |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（Que実行時->Return State Number） | Trailing | Legal |  |
+| **Global · Sub-sequence Call** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | <br>Error HALT（暴走検知） |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでSub-sequence offset + 現State Number | Trailing | Legal | Operand field vs timing-signal field: does D16–D31 mean 'operand' or 'second timing signal' when this is background-executed? (General ambiguity noted in Ch3 for all Globals with extended operands.) |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（Que実行時->Sub-sequence offset + 現State Number） | Trailing | Legal |  |
+| **Global · Loop** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | loop回数オペランドがD16:31を使用するためloop_cnt_match pulseはタイミング信号としては出せない。Que実行時にクロック幅では出せる。<br>Error HALT（暴走検知） |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックで-><br>ループ回数内：Baseレジスタをセット<br>ループ回数到来:：インクリメント | Trailing | Legal | BGプログラムウィンドウ内でのループ |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント<br>（Que実行時-><br>ループ回数内：Baseレジスタをセット<br>ループ回数到来:：インクリメント） | Trailing | Legal | FGタイミングシーケンスのループはQueを使用<br> |
+| **Global · Prog End** | FG | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | HALT if encountered outside an open background-program window.（暴走検知） |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Trailing | Legal | This command IS the band divider: before it = BG, after it = Q (C3-F2). |
+|  | Q | No effect (untouched) | Held (unchanged / frozen) | N/A | 保持（HALT） | Trailing | **HALT** | Can Prog End itself be queued (e.g. after another Prog End)? Worth an explicit ruling. And this causes a HALT（暴走検知） |
+| **Global · NOP** | FG | No effect (untouched すでにReset) | Driven (changes per instruction) | Consumes one tick (waits for next) | tickを待ってインクリメント | Trailing | Legal | State-0 cold-start absorber (C4-V3) when used as the state-0 NOP. |
+|  | BG | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Trailing | Legal |  |
+|  | Q | Continue counting (no reset) <br>when On-Tick | Held (unchanged / frozen) | Ignored (runs at full system clock) | 次のクロックでインクリメント | Trailing | Legal |  |
+
+### The FG-Global exclusion principle — C3-F23 (PROVISIONAL / 仮確定) / FG-Global排除原則 — C3-F23
+
+**Global commands do not execute in the foreground**, with exactly three justified exceptions:
+
+**Global コマンドは前景実行しない**。正当化された例外はちょうど三つ:
+
+| Exception / 例外 | Justification / 理由 |
+|---|---|
+| **Reset** | The strong will to return to the origin, even at the cost of operational continuity. / 動作連続性を無視してでも動作を起点に戻す強い意志。 |
+| **Stay Set** | It controls the phase transition itself. / 動作フェーズの移行そのものを制御している。 |
+| **NOP** | The immediate, cheap voiding of any command. / あらゆるコマンドの無効化の即時的な手軽さ。 |
+
+Base Set, Return, Sub-sequence Call, Loop, and Prog End are **window-only** (BG/Q); encountering any
+of them in the foreground is a runaway error (HALT, § 3.4c). **Consequence:** the foreground admits
+only Stay (time), Branch/Jump (transition), and the three exceptions — a disciplined program's
+foreground reads as a bare enumeration of Stay durations, the timing chart as text. This is the
+time-axis/space-axis separation (Ch1 § 1.4) enforced as band legality. **Structural bonus:** every
+extended-operand Global (Loop, Sub-sequence Call) now lives only in bands where the timing signals
+are **Held**, so the D16–D31 field is always unambiguously the operand — the dual-use question is
+dissolved by banding itself.
+
+Base Set・Return・Sub-sequence Call・Loop・Prog End は**窓内専用**（BG/Q）であり、前景での遭遇は暴走エラー
+（HALT、§ 3.4c）。**帰結:** 前景は Stay（時間）・Branch/Jump（遷移）・三例外のみを容れる——規律あるプログラムの
+前景は Stay 持続時間の裸の羅列として読める、タイミングチャートがテキストとして。これは時間軸/空間軸分離
+（第1章 § 1.4）の帯域合法性としての強制である。**構造的副産物:** 拡張オペランド Global（Loop・Sub-sequence
+Call）はタイミング信号が **Held** の帯域にのみ住むため、D16–D31 は常に曖昧なくオペランドである——二重用途の
+問いは帯域設計自体が解消した。
+
+### Error HALT — runaway detection — C3-F24 (PROVISIONAL / 仮確定) / Error HALT — 暴走検知 — C3-F24
+
+Rule violations **stop the machine where they happen**: the State Number holds at the violating
+instruction (the scene is preserved) and an **error flag output** is raised. Halting cells: the
+FG-illegal Globals above; a stray Prog End (outside an open window, or a second one in the Q band);
+a queued State-Number overwrite (C3-F26); an unpaired Base Set↔Loop across bands (a BG Base Set
+whose Loop is not exited by Prog End; a queued Base Set whose Loop lies in the BG window).
+
+規則違反は**起こった場所で機械を止める**: State Number は違反命令で保持され（現場保存）、**エラーフラグ出力**
+が立つ。HALT するセル: 上記の FG 違法 Global;迷子の Prog End（開いた窓の外、または Q 帯域の二発目）;Que の
+State Number 上書き（C3-F26）;帯域を跨いで対にならない Base Set↔Loop（Loop を抜けないまま Prog End に至る
+BG の Base Set;対応する Loop が BG 窓内にある Que の Base Set）。
+
+- **Escape routes / 脱出経路:** hardware reset; **ISMCE real-time rewriting** over JTAG (NOP-out the
+  offending word, patch a Jump) — a halted core is repaired live, without recompiling; insertion. /
+  ハードウェアリセット;JTAG 越しの **ISMCE リアルタイム書き換え**（問題語の NOP 化・Jump パッチ）——停止した
+  コアを再コンパイルなしに生きたまま修理;インサーション。
+- **External visibility / 外部可視性:** the error flag port doubles as a SignalTap trigger (the
+  capture shows the scene) and an insertion trigger (automated recovery/diagnosis). Pin definition:
+  Chapter 5 (forthcoming). / エラーフラグポートは SignalTap トリガ（キャプチャが現場を示す）と
+  インサーション・トリガ（自動回復／診断）を兼ねる。ピン定義は第5章（近刊）。
+- **Placement / 所属:** the Base Set↔Loop band-crossing checks are **Core-mandatory** — they guard
+  precisely where the most complicated failures arise. Excessive debuggability may be
+  **parameterized later** (noted, not decided). / 帯域跨ぎ検査は **Core 必須**——最もややこしい失敗が
+  生じる箇所をまさに守る。過剰なデバッガビリティは**後日パラメータ化**を検討（記録のみ、未決定）。
+
+Rationale: an undetected structural violation lets unintended behavior chain, and the triggering
+site recedes from the observation point; and giving every illegal combination a meaning proved
+laborious to design and burdensome to learn. Refusing to give meaning is the simplification. The
+former "blank shot = no effect" reading of a stray Prog End is superseded.
+
+根拠: 未検出の構造違反は意図せぬ動作を連鎖させ、引き金の現場は観測点から遠ざかる;また全違法組合せへの意味付与は
+設計に大変で学習に重いと判明した。意味を与えないことが単純化である。迷子 Prog End の旧解釈「空砲（効力なし）」は
+置き換えられる。
+
+### The Stay Start State register — C3-F25 (PROVISIONAL / 仮確定) / Stay Start Stateレジスタ — C3-F25
+
+A new context register giving the **time axis its own notion of "here"**: when foreground **Stay Set**
+executes, its own State Number is written to **Stay Start State**, where it is held **for the duration
+of the stay period and beyond — until the corresponding Loop**, spanning many Stay periods; it is
+refreshed by the next Base Set at the loop head, and its duty ends when the Loop exits. On nested
+contexts it is **part of the saved frame** (pushed/popped with the external stack — the frame gains a
+member; verification queue #3). Reset value 0. **No Core-level external visibility**; a Formation may
+copy it to a general register to expose it.
+
+時間軸に**固有の「ここ」**を与える新しいコンテキストレジスタ: 前景の **Stay Set** が実行されると、自身の State
+Number が **Stay Start State** に書き込まれ、**そのステイ期間中、さらに対応する Loop まで**——多数の Stay 期間を
+跨いで——保持される;ループ先頭の次の Base Set で更新され、Loop を抜けた時に用が済む。入れ子コンテキストでは
+**退避フレームの一員**（外部スタックで push/pop——フレームにメンバーが一人増える;検証キュー#3）。リセット値 0。
+**Core レベルの外部可視性なし**;Formation は汎用レジスタへコピーして可視化できる。
+
+**Queued Base Set semantics / Que の Base Set 意味論:** in the Q band, Base Set loads **Base := Stay
+Start State** (the time-axis origin), so a queued Loop returns to the start of the stay period — the
+repeatable structure — not to a scan position. (In the BG band, Base Set keeps the space-axis
+semantics, Base := current State Number.)
+
+Q 帯域では Base Set は **Base := Stay Start State**（時間軸の起点）をロードし、Que の Loop はスキャン位置で
+なく、反復可能な構造たるステイ期間の開始点へ戻る。（BG 帯域の Base Set は空間軸意味論 Base := 現 State Number を
+保つ。）
+
+**The self-loop / 自己ループ (worked illustration):** a single stay period can loop on itself:
+
+```
+StaySet → ProgEnd → BaseSet(Q) → Loop-65536(Q) → Stay-4096
+```
+
+Stay's 12-bit operand × Loop's 16-bit operand = **2^28 clocks** (~268 M clocks ≈ 5.4 s at 50 MHz) of
+continuous, exact timing **with no prescaler**, in five instructions. Because Loop's count operand
+occupies D16–D31, `loop_cnt_match` cannot be a timing signal; at queued execution it can be emitted
+at clock width.
+
+Stay の 12bit × Loop の 16bit = **2^28 クロック**（約 2.68 億クロック ≈ 50 MHz で 5.4 秒）の連続精密タイミング、
+**プリスケーラなしで**、命令五語。Loop の回数オペランドが D16–D31 を占めるため `loop_cnt_match` はタイミング
+信号としては出せない;Que 実行時にクロック幅で出せる。
+
+### Queue capacity — C3-F26 (PROVISIONAL / 仮確定) and Tie C3-T15 / Que容量 — C3-F26 と Tie C3-T15
+
+The Q band holds a **single reservation register: last-write-wins** — a later reservation replaces an
+earlier one. **Exception:** overwriting a queued **State-Number** reservation (Branch/Jump/Return/
+Call/Loop targets) is a runaway error — **HALT + error flag** (a silently discarded jump detonates
+far downstream, where the trigger is unfindable). Priority arbitration was considered and rejected:
+it cannot rescue a violated program (it merely picks which violation), and it loads the Stay-timeup
+path with logic — the very path the one-clock-registered tick keeps clean (Fmax).
+
+Q 帯域は**単一の予約レジスタ: 後勝ち（last-write-wins）**——後の予約が先の予約を置き換える。**例外:** Que された
+**State Number** 予約（Branch/Jump/Return/Call/Loop の標的）の上書きは暴走エラー——**HALT＋エラーフラグ**
+（黙って破棄されたジャンプは、引き金の見つからない遠い下流で爆発する）。優先順位調停は検討の上棄却: 破られた
+プログラムを救えず（どの違反にするかを選ぶだけ）、Stay-timeup 経路——1クロック叩きティックが清潔に保つまさに
+その経路——にロジックを載せる（Fmax）。
+
+**Tie C3-T15 (open) — nested multi-booking / 入れ子マルチブッキング:** two Base Sets and two Loops in
+one window (`…BaseSet → BaseSet → Loop → Loop → Stay…`, nested self-loops of the 2^44 class): (A)
+forbid — simple, matches the single register; (B) support — "PTSG-ishly, handling this beautifully is
+a temptation" (the architect). Deferred pending cost measurement (a QUEUE_DEPTH parameter may
+reconcile both).
+
+一つの窓に Base Set 二つ・Loop 二つ（2^44 級の入れ子自己ループ）: (A) 禁止——単純、単一レジスタと整合;(B) 対応——
+「PTSG的にはこれをうまく処理できるのは美しいという欲がある」（アーキテクト）。費用計測まで保留（QUEUE_DEPTH
+パラメータが両立させ得る）。
+
+**Formation forward link / Formation 前方リンク:** queue copy to general registers → timing signals
+driven by computation results. / キューの汎用レジスタコピー → 演算結果に基づくタイミング信号。
 
 ---
 
@@ -630,13 +824,18 @@ Following Chapter 2's classification scheme: **Fixed (F)** = architectural commi
 | **C3-T9** | **(DISSOLVED in v1.1)** Loop-counter-at-zero behavior — dissolved by the up-count transition (C3-F17). The counter always starts at 0; zero is simply the loop's normal beginning, so there is no degenerate at-zero case to disambiguate. / **(v1.1 で消滅)** ループカウンタゼロ挙動——アップカウント移行(C3-F17)により消滅。カウンタは常に 0 から始まる；ゼロは単にループの通常の始まりであり、曖昧性除去すべき退化したゼロ事例は存在しない。 | dissolved (was Tie) |
 | **C3-F15** (v1.1) | D16–D31 extended-operand repurposing for internal-mode Globals needing a 12-bit parameter (Loop target, Sub-sequence Call offset). Flat extended operand, no Mode sub-field; the elaborate Mode scheme was declined (memo only). See Chapter 2 v1.1 § 2.7/§ 2.13 (C2-F11). / 12ビットパラメータを必要とする内部モード Global(Loop 目標、Sub-sequence Call オフセット)のための D16-D31 拡張オペランド再目的化。平坦な拡張オペランド、Mode サブフィールドなし；精巧な Mode スキームは不採用(メモのみ)。第2章 v1.1 § 2.7/§ 2.13 (C2-F11) 参照。 | **F** (v1.1 bug fix) |
 | **C3-T10 → C4-F11** (v1.1) | **RESOLVED.** Prescale **edge** for queued execution = **trailing edge**, by the Trailing-Edge Doctrine (Chapter 1 § 1.4a): a queued operation fires at the trailing edge (count completion). The leading-edge-flag hybrid is superseded. Now **Fixed C4-F11** (Chapter 4 § 4.9). (Distinct from the *phase*-alignment question, resolved by C4-F9 — do not conflate.) / **解決。** キュー実行のプリスケール**縁** = **後縁**、後縁主義（第1章 § 1.4a）に従い: キュー演算は後縁（カウント完了）で発火。前縁フラグ・ハイブリッドは置き換えられる。今や **Fixed C4-F11**（第4章 § 4.9）。（*位相*整列の問いとは別個で、C4-F9 が解決——混同しないこと。） | **F** (now C4-F11) |
-| **C3-T11 → C4-F10** (v1.1) | **RESOLVED.** Stay Set is clear/sync-only: it arms the stay counter, which begins counting at Prog End (or the Stay instruction). Eliminates background-program-length jitter. Silicon-confirmed via duty idiom D. Now **Fixed C4-F10** (Chapter 4 § 4.9). The § 3.2 Stay-window definition is revised accordingly in v1.1. / **解決。** Stay Set はクリア／同期のみ: ステイカウンタをアームし、カウントは Prog End（または Stay 命令）で始まる。背景プログラム長ジッタを排除。流儀 D で実機確認済み。今や **Fixed C4-F10**（第4章 § 4.9）。§ 3.2 Stay ウィンドウ定義は v1.1 で相応に改訂。 | **F** (now C4-F10) |
+| **C3-T11 → C4-F10** (v1.1; wording corrected 2026-07) | **RESOLVED.** Stay Set is clear/sync-only: it arms the stay counter, **which counts prescaler ticks from Stay Set onward (On-Tick), through the window; the Stay instruction never clears it** (RH003/004/005). Stay-timeup = the Nth tick after Stay Set, on the free-running grid — independent of the background-program's clock-length (jitter-free). Silicon-confirmed via duty idiom D. Now **Fixed C4-F10** (Chapter 4 § 4.9). *(An earlier v1.1 text mis-stated "begins counting at Prog End"; corrected — see § 3.2.)* / **解決。** Stay Set はクリア／同期のみ: ステイカウンタをアームし、**カウンタは Stay Set 以降プリスケーラティックを数え（On-Tick）、窓を通して継続;Stay 命令は決してクリアしない**（RH003/004/005）。Stay-timeup = Stay Set 後の第 N tick、自由走行グリッド上——背景プログラムのクロック長から独立（ジッタ無縁）。流儀 D で実機確認済み。今や **Fixed C4-F10**。*（以前の v1.1 文は「Prog End で開始」と誤記;訂正済み——§ 3.2 参照。）* | **F** (now C4-F10) |
 | **C3-T12** (v1.1, new) | Local Branch — a zero-time-axis conditional branch for use inside the immediate background band (the top-level Branch consumes a clock / self-loops, breaking the timing hold). Would occupy an internal sub-opcode slot. Deferred to Chapter 4. / Local Branch——即時裏帯域内で使うゼロ時間軸条件分岐(トップレベル Branch はクロックを消費／自己ループし、タイミング保持を破壊する)。内部サブオペコードスロットを占有する。第4章へ繰り延べ。 | **T** (deferred) |
 | **C3-T13** (v1.1, new) | Queued NOP — whether a NOP placed after Prog End should function as a Timeup-tracking timing placeholder (sliding one prescaled unit / a specific pin phase in at the very end of the wait). Deferred to Chapter 4. / キュー NOP——Prog End の後に置かれた NOP が、Timeup 追尾型タイミングプレースホルダーとして機能すべきか(待機の最末尾にプリスケール1単位／特定ピンフェーズを滑り込ませる)。第4章へ繰り延べ。 | **T** (deferred) |
 | **C3-T14** (v1.1, new) | Final internal-control sub-opcode 0–7 layout — including Prog End's permanent slot (tentatively 6), whether a Local Branch is added, and the fate of NOP (one proposal removes NOP to free a slot). Deferred to Chapter 4. / 最終的な内部制御サブオペコード 0-7 レイアウト——Prog End の恒久スロット(暫定 6)、Local Branch が追加されるか、NOP の運命(ある提案は NOP を除いてスロットを空ける)を含む。第4章へ繰り延べ。 | **T** (deferred) |
 | **C3-F21** (v1.1, PROVISIONAL) | **No-prescaler-reset principle.** The program-issued Reset command does NOT reset the prescaler; the prescaler is fully free-running (C4-F9). Reason: a slave PTSG must have no influence over the externally-driven time-base. See § 3.4a. / **非プリスケーラ・リセット原則。** プログラム発行の Reset コマンドはプリスケーラをリセットしない；プリスケーラは完全フリーラン（C4-F9）。理由: スレーブ PTSG は外部駆動の時間基準に影響できてはならない。§ 3.4a 参照。 | **F** (仮確定) |
 | **C3-F22** (v1.1, PROVISIONAL) | **Reset execution bands.** Reset is selectable across foreground (immediate, aligned by the following state-0 NOP; Reset+NOP sharing one timing_signals value = one prescale period), background ("staff meal", indeterminate, emergencies), and queued (effectively prescaled, fires at Stay-timeup). See § 3.4a. / **Reset 実行帯域。** Reset は前景（即時、後続 state-0 NOP で整列；Reset+NOP が一 timing_signals 値共有 = 1 プリスケール周期）、背景（「まかない」、不定、緊急）、Que（実質プリスケールド、Stay-timeup 発火）で選択可能。§ 3.4a 参照。 | **F** (仮確定) |
 | **C3-V4** (v1.1, PROVISIONAL) | **Formation opt-in for prescaler-resetting Reset.** The Core forbids prescaler reset (C3-F21); a Formation MAY opt in where genuinely needed, accepting the loss of external synchronizability. A slave configuration must structurally never be able to reset the prescaler. See § 3.4a. / **プリスケーラをリセットする Reset の Formation opt-in。** コアはプリスケーラ・リセットを禁じる（C3-F21）；Formation は本当に必要なら選択でき、外部同期可能性の喪失を受け入れる。スレーブ構成は構造的に決してプリスケーラをリセットできてはならない。§ 3.4a 参照。 | **V** (仮確定) |
+| **C3-F23** (v1.1, PROVISIONAL) | **FG-Global exclusion principle.** Global commands do not execute in the foreground except Reset, Stay Set, NOP (each with a stated justification). Base Set/Return/Sub-sequence Call/Loop/Prog End are window-only; FG encounter = HALT. Enforces time/space separation as band legality; dissolves the D16–D31 dual-use (extended-operand Globals live only in Held-signal bands). See § 3.4b. / **FG-Global排除原則。** Reset・Stay Set・NOP を除き Global は前景実行しない。他は窓内専用、FG 遭遇は HALT。時間/空間分離を帯域合法性として強制;D16–D31 二重用途を解消。§ 3.4b 参照。 | **F** (仮確定) |
+| **C3-F24** (v1.1, PROVISIONAL) | **Error HALT (runaway detection).** Rule violations halt at the violating instruction with an error-flag output; escapes = hardware reset / ISMCE live patch / insertion. Base Set↔Loop band-crossing checks are Core-mandatory; excessive debuggability may be parameterized later. Supersedes the "blank shot = no effect" reading of a stray Prog End. See § 3.4b/§ 3.4c list. / **Error HALT（暴走検知）。** 規則違反は違反命令で停止しエラーフラグを出力;脱出 = HWリセット/ISMCE生パッチ/インサーション。帯域跨ぎ検査は Core 必須。迷子 Prog End の「空砲」解釈を置き換える。 | **F** (仮確定) |
+| **C3-F25** (v1.1, PROVISIONAL) | **Stay Start State register.** FG Stay Set writes its own State Number; held until the matching Loop (spans many Stay periods); stacked with the context on nesting (external-stack frame gains a member); reset 0; Core-invisible (Formation may copy out). Queued Base Set loads Base := Stay Start State (time-axis origin) → queued loops return to the stay-period start; enables the single-period self-loop (2^28 pattern). See § 3.4b. / **Stay Start Stateレジスタ。** FG Stay Set が自身の SN を書き込み、対応 Loop まで保持;入れ子でスタック;リセット 0;Core 不可視。Que の Base Set は Base := Stay Start State → Que ループはステイ期間起点へ帰還;単一期間自己ループ（2^28）を可能に。 | **F** (仮確定) |
+| **C3-F26** (v1.1, PROVISIONAL) | **Queue capacity: last-write-wins; SN-overwrite HALTs.** Single reservation register; a later reservation replaces an earlier one; overwrite of a queued State-Number reservation = runaway error (HALT + flag). Priority arbitration rejected (cannot rescue intent; loads the timeup path / Fmax). Resolves verification-queue #4. See § 3.4b. / **Que容量: 後勝ち;SN上書きはHALT。** 単一予約レジスタ;後の予約が置換;SN 予約の上書きは暴走エラー。優先順位調停は棄却（意図を救えず timeup 経路に負荷）。検証キュー#4 を解決。 | **F** (仮確定) |
+| **C3-T15** (v1.1, new) | **Nested multi-booking Tie.** Two Base Sets / two Loops in one window (nested self-loops, 2^44-class): (A) forbid — simple, matches the single-register queue; (B) support elegantly — cost unmeasured (a QUEUE_DEPTH parameter may reconcile). Open pending cost measurement. / **入れ子マルチブッキング Tie。** (A) 禁止——単純;(B) 美しく対応——費用未計測（QUEUE_DEPTH パラメータが両立し得る）。費用計測まで未決。 | **T** |
 
 **Decision count by status (v1.1):**
 
