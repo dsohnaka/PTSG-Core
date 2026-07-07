@@ -93,7 +93,13 @@ module ptsg_core #(
     //   {ins_flag, base[11:0], loop[11:0], state[11:0]} = 1 + 12 + 12 + 12 = 37
     parameter integer STACK_W     = 1 + ADDR_W + CNT_W + ADDR_W,
     // ---- Instruction-memory initialisation (simulation: hex; Quartus: .mif) -
-    parameter         INIT_FILE   = "blinky_with_prescaler.hex"            // $readmemh file, or "" for none
+    parameter         INIT_FILE     = "blinky_with_prescaler.hex",  // $readmemh file (SIM branch), or "" for none
+    parameter         INIT_FILE_MIF = "",           // .mif file (M10K branch), or "" for none
+    // ---- Instruction-memory vendor branch (ptsg_imem wrapper) ---------------
+    //   "M10K" : Cyclone V altsyncram + ISMCE (INSTANCE_NAME=PTSG) — synthesis
+    //   "SIM"  : behavioural array — simulation (iverilog etc.)
+    parameter         IMEM_VENDOR   = "M10K",
+    parameter         IMEM_EDGE     = "NEG"         // "NEG" = half-cycle read, FSM needs no fetch stage
 ) (
     // ---- Mandatory pins (Chapter 5 §5.2) ------------------------------------
     input  wire                 clk,              // System clock           (§5.3)
@@ -154,12 +160,12 @@ module ptsg_core #(
     localparam [7:0] SUB_NOP      = 8'd7;   // NOP
 
     // ========================================================================
-    //  Instruction memory (single-cycle read model; maps to BRAM on Cyclone V)
+    //  Instruction memory — vendor-abstracted wrapper (ptsg_imem, EDGE="NEG").
+    //  From this posedge FSM's viewpoint the NEG half-cycle read behaves like a
+    //  combinational read (effective latency 0): at every rising edge,
+    //  instr == mem[state_num]. See ptsg_imem.v for the timing contract.
+    //  The wrapper instance is declared below, after the fetch wires.
     // ========================================================================
-    reg [DATA_W-1:0] imem [0:IMEM_DEPTH-1];
-    initial begin
-        if (INIT_FILE != "") $readmemh(INIT_FILE, imem);
-    end
 
     // ========================================================================
     //  Core control registers
@@ -214,24 +220,25 @@ module ptsg_core #(
     reg               pend_is_insert;   // pulse insert_ack on completion
 
     // ========================================================================
-    //  Combinational instruction fetch and field decode (Chapter 2 §2.2)
+    //  Instruction fetch and field decode (Chapter 2 §2.2)
+    //  ptsg_imem EDGE="NEG": effectively combinational for this posedge FSM.
     // ========================================================================
-    // 【修正前】
-    // wire [DATA_W-1:0] instr = imem[state_num];
-    //
-    // 【修正後】
-    //reg [DATA_W-1:0] instr;
-    //always @(posedge clk) begin
-    //    instr <= imem[state_num];
-    //end
     wire [DATA_W-1:0]	instr;
-    ptsg_imem ptsg_imem(
+    ptsg_imem #(
+    	.ADDR_W        (ADDR_W),
+    	.DATA_W        (DATA_W),
+    	.DEPTH         (IMEM_DEPTH),
+    	.RD_LAT        (1),
+    	.EDGE          (IMEM_EDGE),
+    	.VENDOR        (IMEM_VENDOR),
+    	.INIT_FILE_HEX (INIT_FILE),
+    	.INIT_FILE_MIF (INIT_FILE_MIF)
+    ) ptsg_imem (
     	.clk	(clk),
     	.addr	(state_num),
     	.rdata	(instr)
-    	
     );
-    
+
     wire [3:0]        opcode  = instr[3:0];        // D0-D3
     wire [11:0]       operand = instr[15:4];       // D4-D15
     wire [15:0]       tsig    = instr[31:16];      // D16-D31 (timing signals)

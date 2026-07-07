@@ -26,7 +26,8 @@ module ptsg_core_tb;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, toggles=0, k; reg last_led;
 
-    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1)) dut (
+    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1),
+                .IMEM_VENDOR("SIM"), .INIT_FILE("")) dut (
         .clk(clk), .rst(rst), .condition(condition),
         .state_number(state_number), .timing_signals(timing_signals),
         .ext_op_valid(ext_op_valid), .ext_op_subopcode(ext_op_subopcode),
@@ -49,9 +50,9 @@ module ptsg_core_tb;
     initial begin
         // ---------------- Test A: blink ----------------
         reset1;
-        dut.imem[0]=32'h00010700; dut.imem[1]=32'h00010021;   // NOP on ; Stay2 (hold on)
-        dut.imem[2]=32'h00000700; dut.imem[3]=32'h00000021;   // NOP off; Stay2 (hold off)
-        dut.imem[4]=32'h00000013;                             // Jump 1
+        dut.ptsg_imem.g_sim.mem[0]=32'h00010700; dut.ptsg_imem.g_sim.mem[1]=32'h00010021;   // NOP on ; Stay2 (hold on)
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000700; dut.ptsg_imem.g_sim.mem[3]=32'h00000021;   // NOP off; Stay2 (hold off)
+        dut.ptsg_imem.g_sim.mem[4]=32'h00000013;                             // Jump 1
         @(posedge clk); rst=0; #1; last_led=timing_signals[0];
         for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
             if (timing_signals[0]!==last_led) toggles=toggles+1; last_led=timing_signals[0]; end
@@ -60,12 +61,12 @@ module ptsg_core_tb;
 
         // ---------------- Test B: counted Loop ----------------
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00000100;   // Base Set
-        dut.imem[2]=32'h00000700;   // body NOP
-        dut.imem[3]=32'h00030500;   // Loop target=3 (D16-D31=3)
-        dut.imem[4]=32'hAAAA0700;   // exit marker tsig=0xAAAA
-        dut.imem[5]=32'h00000053;   // Jump 5 halt
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000100;   // Base Set
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000700;   // body NOP
+        dut.ptsg_imem.g_sim.mem[3]=32'h00030500;   // Loop target=3 (D16-D31=3)
+        dut.ptsg_imem.g_sim.mem[4]=32'hAAAA0700;   // exit marker tsig=0xAAAA
+        dut.ptsg_imem.g_sim.mem[5]=32'h00000053;   // Jump 5 halt
         @(posedge clk); rst=0;
         begin: wB for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
             if (timing_signals==16'hAAAA) disable wB; end end
@@ -74,8 +75,8 @@ module ptsg_core_tb;
 
         // ---------------- Test C: Branch wait ----------------
         reset1;
-        dut.imem[0]=32'h00000002;   // Branch operand 0 (self-loop)
-        dut.imem[1]=32'h00FF0013;   // Jump 1 self, tsig=0x00FF held
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000002;   // Branch operand 0 (self-loop)
+        dut.ptsg_imem.g_sim.mem[1]=32'h00FF0013;   // Jump 1 self, tsig=0x00FF held
         @(posedge clk); rst=0; condition=0;
         repeat (5) @(posedge clk); #1;
         if (state_number!==12'd0) begin $display("FAIL C: not waiting (st=%0d)",state_number); errors=errors+1; end
@@ -86,12 +87,12 @@ module ptsg_core_tb;
 
         // ---------------- Test D: Call + Return ----------------
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00030400;   // Call offset 3 -> 4 (save 1)
-        dut.imem[2]=32'h12340700;   // return-to-after lands here (tsig=0x1234)
-        dut.imem[3]=32'h00000033;   // Jump 3 halt
-        dut.imem[4]=32'h56780700;   // subroutine body (tsig=0x5678)
-        dut.imem[5]=32'h00000300;   // Return
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00030400;   // Call offset 3 -> 4 (save 1)
+        dut.ptsg_imem.g_sim.mem[2]=32'h12340700;   // return-to-after lands here (tsig=0x1234)
+        dut.ptsg_imem.g_sim.mem[3]=32'h00000033;   // Jump 3 halt
+        dut.ptsg_imem.g_sim.mem[4]=32'h56780700;   // subroutine body (tsig=0x5678)
+        dut.ptsg_imem.g_sim.mem[5]=32'h00000300;   // Return
         @(posedge clk); rst=0;
         begin: wD for (k=0;k<50;k=k+1) begin @(posedge clk); #1;
             if (timing_signals===16'h1234) disable wD; end end
@@ -100,11 +101,11 @@ module ptsg_core_tb;
 
         // ---------------- Test E: indirect Jump ----------------
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00000003;   // Jump operand 0 => indirect
-        dut.imem[2]=32'h00000033;   // (skipped)
-        dut.imem[7]=32'hBEEF0700;   // target tsig=0xBEEF
-        dut.imem[8]=32'h00000083;   // Jump 8 halt
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000003;   // Jump operand 0 => indirect
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000033;   // (skipped)
+        dut.ptsg_imem.g_sim.mem[7]=32'hBEEF0700;   // target tsig=0xBEEF
+        dut.ptsg_imem.g_sim.mem[8]=32'h00000083;   // Jump 8 halt
         indirect_data=12'd7;
         @(posedge clk); rst=0;
         begin: wE for (k=0;k<50;k=k+1) begin @(posedge clk); #1;

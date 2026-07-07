@@ -26,7 +26,8 @@ module examples_tb;
             seen_extwr <= 1'b1;
     end
 
-    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1)) dut (
+    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1),
+                .IMEM_VENDOR("SIM"), .INIT_FILE("")) dut (
         .clk(clk), .rst(rst), .condition(condition),
         .state_number(state_number), .timing_signals(timing_signals),
         .ext_op_valid(ext_op_valid), .ext_op_subopcode(ext_op_subopcode),
@@ -42,11 +43,11 @@ module examples_tb;
     always #5 clk=~clk;
 
     integer j;
-    task clear_imem; begin for (j=0;j<32;j=j+1) dut.imem[j]=32'h00000000; end endtask
+    task clear_imem; begin for (j=0;j<32;j=j+1) dut.ptsg_imem.g_sim.mem[j]=32'h00000000; end endtask
     // Programs are short; clear_imem zeroes the rest. (The simulator may print a
     // harmless "not enough words" note because the files are shorter than IMEM.)
     task load; input [1023:0] f; begin
-        rst=1; @(posedge clk); clear_imem; $readmemh(f, dut.imem); @(posedge clk); rst=0;
+        rst=1; @(posedge clk); clear_imem; $readmemh(f, dut.ptsg_imem.g_sim.mem); @(posedge clk); rst=0;
     end endtask
 
     initial begin
