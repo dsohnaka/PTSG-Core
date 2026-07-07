@@ -84,6 +84,9 @@
 // 011 2026-07-07       Claude Code   Mod : A4 conformance — the in-window stay-counter tick increment is
 //                                          hoisted to a single rule outside the opcode case (covers BG
 //                                          Branch/Jump and S_IND/S_PUSH/S_POP, which RH004/005 missed).
+// 012 2026-07-07       Claude Code   Mod : Branch band-templated (§3.4b): FG decides on the prescaler tick
+//                                          (C4-F8) and drives tsig; BG/Q hold tsig and decide at full clock.
+//                                          Q reservation (evaluate-at-timeup) deferred to Phase 3.
 //
 // ============================================================================
 
@@ -554,19 +557,31 @@ module ptsg_core #(
                     //  Branch (opcode 2) — conditional state transition
                     // --------------------------------------------------------
                     OP_BRANCH: begin
-                        timing_signals <= tsig;
-                        if (condition) begin
-                            // Condition true => no branch (C2-F5)
-                            state_num <= state_num + 1'b1;
-                        end else if (operand == 12'd0) begin
-                            // Self-loop / wait-for-Condition (no auto-save)
-                            state_num <= state_num;
-                        end else begin
-                            // Branch taken => auto-save the branch address
-                            // (Return restores saved+1), jump forward.
-                            save_or_set(state_num, 1'b0,
-                                        state_num + operand);
-                        end
+                        // =============================================================================//
+                        // REVISION HISTORY 012                                                         //
+                        // 2026-07-07 Claude Code  Mod : Branch is band-templated per §3.4b:            //
+                        //      FG drives tsig and decides on the next prescaler tick (C4-F8 —          //
+                        //      previously it decided on the next clock, un-prescaled);                 //
+                        //      BG holds the timing signals (previously it drove them) and decides      //
+                        //      on the next clock at full system rate;                                  //
+                        //      Q should reserve the operand and evaluate Condition at Stay-timeup      //
+                        //      (§3.4b Branch Q row) — deferred to the Phase-3 generalized              //
+                        //      reservation register; until then a Q-band Branch behaves like BG        //
+                        //      (documented deviation).                                                 //
+                        // =============================================================================//
+                        if (in_queued_band) begin                    // as Que command (after Prog End) //
+                            branch_decide;             // TODO Phase 3: reserve, evaluate at timeup     //
+                        end                                                                             //
+                        else if (window_open) begin       // as background command (inside Stay window) //
+                            branch_decide;                     // tsig held; full-clock decision        //
+                        end                                                                             //
+                        else begin                       // as foreground command (outside Stay window) //
+                            timing_signals <= tsig;                                                     //
+                            if (presc_tick) begin      // Decide only on prescaler tick (C4-F8)         //
+                                branch_decide;                                                          //
+                            end                                                                         //
+                        end                                                                             //
+                        // =============================================================================//
                     end
                     // --------------------------------------------------------
                     //  Jump (opcode 3) — unconditional (operand 0 = indirect,
@@ -718,6 +733,26 @@ module ptsg_core #(
     //   ins        : the "saved-by-insertion" flag (C3-T7)
     //   target     : where execution continues immediately after the save
     // ========================================================================
+    // ========================================================================
+    //  Branch decision (task): the Condition-directed next-state selection,
+    //  shared by the FG (tick-gated) and BG/Q (full-clock) bands of OP_BRANCH.
+    // ========================================================================
+    task branch_decide;
+        begin
+            if (condition) begin
+                // Condition true => no branch (C2-F5)
+                state_num <= state_num + 1'b1;
+            end else if (operand == 12'd0) begin
+                // Self-loop / wait-for-Condition (no auto-save)
+                state_num <= state_num;
+            end else begin
+                // Branch taken => auto-save the branch address
+                // (Return restores saved+1), jump forward.
+                save_or_set(state_num, 1'b0, state_num + operand);
+            end
+        end
+    endtask
+
     task save_or_set;
         input [ADDR_W-1:0] save_state;
         input              ins;
