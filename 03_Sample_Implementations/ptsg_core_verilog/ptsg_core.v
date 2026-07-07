@@ -677,7 +677,10 @@ module ptsg_core #(
                 if (indirect_ready) begin
                     fsm <= S_RUN;
                     if (ind_is_loop) begin
-                        if (loop_exits(loop_cnt, {{(LOOP_W-ADDR_W){1'b0}}, indirect_data})) begin
+                        // indirect_data (ADDR_W bits) zero-extends implicitly to the
+                        // LOOP_W-wide task input; no explicit replication (which would
+                        // be illegal if LOOP_W == ADDR_W).
+                        if (loop_exits(loop_cnt, indirect_data)) begin
                             loop_cnt       <= {LOOP_W{1'b0}};
                             loop_cnt_match <= 1'b1;
                             state_num      <= state_num + 1'b1;
