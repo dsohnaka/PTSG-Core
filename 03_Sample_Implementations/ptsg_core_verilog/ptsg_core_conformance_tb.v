@@ -28,6 +28,16 @@
 //    T7 — Ruling 2026-07-07: a Q-band NOP advances the scan (the former
 //         prog_end_seen -> S_WAIT transition would hang here with a stale
 //         stay_target).
+//    T8 — C3-F22/C7 (PROVISIONAL): a foreground Reset fires immediately (no
+//         tick-gate) and drives its own D16-D31 field instead of clearing
+//         timing_signals to 0.
+//    T9 — C3-F22/C7 (PROVISIONAL): a queued (Q-band) Reset fires exactly at
+//         Stay-timeup, sets State Number to 0, and drives the tsig captured
+//         from its own instruction word at Q-scan time.
+//    T10 — C3-F22 (PROVISIONAL, open interpretation): a background Reset
+//         panics State Number to 0 but leaves the Stay window open, per this
+//         implementation's reading of the §3.4b table's silence on window
+//         state for BG Reset. Flagged for architect review.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -74,6 +84,7 @@ module ptsg_core_conformance_tb;
 
     // Instruction constructors (D0-D3 opcode, D4-D15 operand, D16-D31 tsig)
     function [31:0] I_NOP;     input [15:0] tsig; I_NOP     = {tsig, 16'h0700}; endfunction
+    function [31:0] I_RESET;   input [15:0] tsig; I_RESET   = {tsig, 16'h0000}; endfunction
     function [31:0] I_STAYSET; input [15:0] tsig; I_STAYSET = {tsig, 16'h0200}; endfunction
     function [31:0] I_PROGEND; input [15:0] tsig; I_PROGEND = {tsig, 16'h0600}; endfunction
     function [31:0] I_BASESET; input [15:0] tsig; I_BASESET = {tsig, 16'h0100}; endfunction
@@ -281,6 +292,82 @@ module ptsg_core_conformance_tb;
         if (seen) $display("PASS T7: Q-band NOP scanned past; queued Jump fired at timeup");
         else begin $display("FAIL T7: never reached s8 — Q-band NOP stalled the scan (st=%0d)",
                             state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T8 — FG Reset (C3-F22, PROVISIONAL): fires immediately, no
+        //      tick-gate, and drives its own tsig field (C7) instead of
+        //      clearing to 0.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_NOP(16'h00AA);
+        dut.ptsg_imem.g_sim.mem[2]=I_RESET(16'h00BB);
+        dut.ptsg_imem.g_sim.mem[3]=I_JUMP(16'hDEAD,12'd3);  // unreachable if Reset works
+        start;
+        // wait until we first leave s0, so we don't false-trigger on the
+        // initial post-hardware-reset state_number==0
+        k=0; while (state_number===12'd0 && k<200) begin @(posedge clk); #1; k=k+1; end
+        seen=0; visits=0;   // visits reused here as an "escaped to s3" counter
+        for (k=0;k<200;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h00BB) seen=1;
+            if (timing_signals===16'hDEAD) visits=visits+1;
+        end
+        if (seen && visits==0)
+            $display("PASS T8: FG Reset fired immediately, drove its own tsig (0x00BB), no s3 escape");
+        else begin
+            $display("FAIL T8: seen(0x00BB)=%0d escaped-to-s3=%0d (own-tsig / immediate-fire broken)",
+                     seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T9 — Q-band Reset (C3-F22 Q row + C7): fires exactly at
+        //      Stay-timeup, sets State Number to 0, and drives the tsig
+        //      captured from its own D16-D31 at Q-scan time — not the
+        //      Stay's held value, not zero.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_RESET(16'h0CCC);        // Q: queued
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        start;
+        seen=0;
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0CCC && state_number===12'd0) begin seen=1; k=300; end
+        end
+        if (seen) $display("PASS T9: Q-band Reset fired at Stay-timeup (SN=0, own tsig 0x0CCC)");
+        else begin $display("FAIL T9: never observed SN=0 with tsig=0x0CCC at timeup");
+            errors=errors+1; end
+
+        // ================================================================
+        // T10 — BG Reset (PROVISIONAL interpretation, flagged for
+        //      architect review): the §3.4b table only arms the stay
+        //      counter for BG Reset ("reset to 0, don't start") and says
+        //      nothing about closing the window, so this implementation
+        //      reads a BG Reset as panicking State Number to 0 while
+        //      LEAVING the Stay window open (still inside the "staff
+        //      meal" band). This test pins that interpretation — if the
+        //      architect rules the window should close instead, this is
+        //      the test to flip alongside the RTL.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_RESET(16'h0EEE);        // BG Reset — panic to s0
+        start;
+        k=0; while (state_number!==12'd3 && k<200) begin @(posedge clk); #1; k=k+1; end
+        @(posedge clk); #1;   // the clock the BG Reset fires on
+        if (state_number===12'd0 && dut.window_open===1'b1)
+            $display("PASS T10: BG Reset panicked SN to 0, left the Stay window open (documented interpretation)");
+        else begin
+            $display("FAIL T10: st=%0d window_open=%b (expected st=0, window_open=1)",
+                     state_number, dut.window_open);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");

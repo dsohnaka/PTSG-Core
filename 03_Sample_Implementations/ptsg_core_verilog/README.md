@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T7, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T10, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -100,6 +100,7 @@ reference resolves them according to the contributor's documented leans:
 | C4-T1 indirect handshake | Core stalls until `indirect_ready` |
 | C4-T2 prescaler config | compile-time fixed (`PRESCALE`) |
 | C4-F10 Stay Set role (was Tie C4-T4) | clear/sync-only; the counter counts prescaler ticks On-Tick from Stay Set through the window (RH003/004/005 + A4 hoist RH011) |
+| C3-F22 Reset bands (PROVISIONAL) | FG/BG fire immediately, no tick-gate; Q defers to Stay-timeup via the single queued slot. **Open interpretation, flagged for architect review:** a BG Reset panics State Number to 0 but leaves the Stay window open — the §3.4b table only arms the stay counter for BG Reset and is silent on window state (RH014, conformance test T10). |
 
 ## Deliberate simplifications / 意図的な簡略化
 
@@ -107,8 +108,10 @@ This is a readable reference, not a fully-elaborated production core. The
 following are faithful to the canonical patterns but simplified:
 
 - **Queued band (after Prog End)** implements a single queued-operation slot and
-  supports the canonical queued **Loop**. Other internal-mode commands placed
-  after Prog End execute immediately.
+  supports the canonical queued **Loop**, **Jump**, and **Reset**. Other
+  internal-mode commands placed after Prog End execute immediately (documented
+  deviation; generalizing the reservation register to all commands, with
+  SN-overwrite HALT, is Phase 3 / C8 work).
 - **Indirect read for a queued Loop** is not performed; a queued Loop uses its
   literal D16–D31 target (`0` ⇒ zero iterations, C4-V1).
 - **Base Set** keeps a single-level base (sets the base and advances). Because a

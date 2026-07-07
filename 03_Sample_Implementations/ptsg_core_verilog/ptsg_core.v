@@ -92,6 +92,20 @@
 //                                          and an occupied holding register spills to the external stack
 //                                          (implicit push, C3-T6 lean A) via save_or_set(is_insert), making
 //                                          the pend_is_insert path live.
+// 014 2026-07-08       Claude Code   Mod : Reset (SUB_RESET) is band-templated per C3-F22 (PROVISIONAL):
+//                                          FG/BG fire immediately (no tick-gate) and now drive their own
+//                                          tsig field instead of clearing to 0 (C7); Q defers to the
+//                                          existing single-slot queue, firing at Stay-timeup with its own
+//                                          captured tsig. This surfaced (and fixes) a latent queue-field
+//                                          aliasing gap: queued_subop's reset/default value (0) equals
+//                                          SUB_RESET's own encoding, and queued_opcode was never reset
+//                                          (X in simulation) and was left untouched by the Loop Q-branch —
+//                                          so a queued Jump could misfire as a queued Reset, and (pre-
+//                                          existing, now also fixed) a queued Loop that exits could alias
+//                                          a stale queued_opcode==OP_JUMP from an earlier window. Every
+//                                          Q-branch (Loop/Jump/Reset) now sets both queued_subop AND
+//                                          queued_opcode explicitly, and all three consumers (resume_addr,
+//                                          the S_WAIT Loop-update, the S_WAIT Reset-firing) check both.
 //
 // ============================================================================
 
@@ -210,6 +224,8 @@ module ptsg_core #(
     reg [7:0]         queued_subop;
     reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
     reg [LOOP_W-1:0]  queued_target;
+    reg [TSIG_W-1:0]  queued_tsig;      // RH014: Reset's own D16-D31, captured at Q-scan
+                                        // time and driven at Stay-timeup firing (C7).
 
     // Stay-counter (13-bit internal: 0..4096) --------------------------------
     reg [CNT_W:0]     stay_cnt;
@@ -336,8 +352,13 @@ module ptsg_core #(
     // registers) so it has no extra clock of latency: a queued Loop that has not
     // yet reached its target redirects the resume to the base address, otherwise
     // execution advances past the Stay state.
+    // RH014: both branches now also check the companion field (queued_opcode
+    // for Loop, queued_subop for Jump) — every Q-branch sets both fields
+    // explicitly (Loop/Reset: queued_opcode<=OP_GLOBAL; Jump: queued_subop<=
+    // SUB_NOP), so a queued Loop that exits can no longer alias a stale
+    // queued_opcode==OP_JUMP left over from an earlier window, and vice versa.
     wire [ADDR_W-1:0] resume_addr =
-        (queued_valid && (queued_subop == SUB_LOOP) &&
+        (queued_valid && (queued_subop == SUB_LOOP) && (queued_opcode == OP_GLOBAL) &&
          !loop_exits(loop_cnt, queued_target)) ? base_addr :
         // =============================================================================//
         // REVISION HISTORY  008                                                        //
@@ -364,7 +385,12 @@ module ptsg_core #(
             prog_end_seen   <= 1'b0;
             queued_valid    <= 1'b0;
             queued_subop    <= 8'd0;
+            queued_opcode   <= OP_GLOBAL;  // RH014 hygiene: was never reset (X in sim);
+                                            // harmless in silicon (FFs power up 0 = OP_GLOBAL,
+                                            // never matching OP_JUMP) but a genuine simulation
+                                            // gap — see resume_addr's queued_opcode==OP_JUMP arm.
             queued_target   <= {LOOP_W{1'b0}};
+            queued_tsig     <= {TSIG_W{1'b0}};
             stay_cnt        <= {(CNT_W+1){1'b0}};
             stay_target     <= {(CNT_W+1){1'b0}};
             presc_cnt       <= {PRESC_W{1'b0}};
@@ -432,16 +458,49 @@ module ptsg_core #(
                         if (is_internal_global) begin
                             case (g_subop)
                             SUB_RESET: begin
-                                // Force State Number to 0; clear counters/holding.
-                                state_num      <= {ADDR_W{1'b0}};
-                                loop_cnt       <= {LOOP_W{1'b0}};
-                                base_addr      <= {ADDR_W{1'b0}};
-                                hr_occupied    <= 1'b0;
-                                stack_depth    <= 16'd0;
-                                window_open    <= 1'b0;
-                                prog_end_seen  <= 1'b0;
-                                queued_valid   <= 1'b0;
-                                timing_signals <= {TSIG_W{1'b0}};
+                                // =============================================================================//
+                                // REVISION HISTORY 014                                                         //
+                                // 2026-07-08 Claude Code  Mod : Reset is band-templated per C3-F22             //
+                                //      (PROVISIONAL). FG and BG both fire IMMEDIATELY (no tick-gate — the      //
+                                //      §3.4b table marks Prescaler Tick "Ignored" in both rows; FG carries     //
+                                //      the doctrine's Leading-edge exception, Ch1 §1.4a). Q defers to the      //
+                                //      existing single-slot queue, firing at Stay-timeup (S_WAIT below),       //
+                                //      carrying its own D16-D31 forward in queued_tsig for the C7 own-tsig     //
+                                //      drive (replaces the old unconditional clear-to-0). Reset never touches //
+                                //      presc_cnt in any band (C3-F21 — audited: no branch below writes it).    //
+                                //      BG interpretation choice (open, flagged for architect review): the     //
+                                //      table only arms the stay counter for BG ("reset to 0, don't start");   //
+                                //      it does not say the window closes, so window_open/prog_end_seen/       //
+                                //      queued_valid are left untouched here — a BG Reset is read as a         //
+                                //      panic-to-state-0 that stays inside the still-open "staff meal" window, //
+                                //      not as an implicit window-close. FG needs no such statement (it is     //
+                                //      already outside any window by construction).                           //
+                                // =============================================================================//
+                                if (in_queued_band) begin                    // as Que command (after Prog End) //
+                                    queued_valid  <= 1'b1;                                                      //
+                                    queued_subop  <= SUB_RESET;                                                 //
+                                    queued_opcode <= OP_GLOBAL;      // not OP_JUMP — keep resume_addr honest   //
+                                    queued_tsig   <= tsig;           // captured now; driven at firing (C7)     //
+                                    state_num     <= state_num + 1'b1;               // scan on                //
+                                end                                                                             //
+                                else if (window_open) begin       // as background command (inside Stay window) //
+                                    state_num      <= {ADDR_W{1'b0}};                                          //
+                                    loop_cnt       <= {LOOP_W{1'b0}};                                          //
+                                    base_addr      <= {ADDR_W{1'b0}};                                          //
+                                    hr_occupied    <= 1'b0;                                                    //
+                                    stack_depth    <= 16'd0;                                                   //
+                                    stay_cnt       <= {(CNT_W+1){1'b0}};       // arm to 0, don't start (§3.4b) //
+                                    timing_signals <= tsig;               // own field, not cleared (C7)       //
+                                end                                                                             //
+                                else begin                       // as foreground command (outside Stay window) //
+                                    state_num      <= {ADDR_W{1'b0}};                                          //
+                                    loop_cnt       <= {LOOP_W{1'b0}};                                          //
+                                    base_addr      <= {ADDR_W{1'b0}};                                          //
+                                    hr_occupied    <= 1'b0;                                                    //
+                                    stack_depth    <= 16'd0;                                                   //
+                                    timing_signals <= tsig;               // own field, not cleared (C7)       //
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             SUB_BASESET: begin
                                 // Mark the current address as the Loop base and
@@ -491,8 +550,14 @@ module ptsg_core #(
                             SUB_LOOP: begin
                                 if (in_queued_band) begin
                                     // Defer to Stay-timeup (queued band).
+                                    // RH014: queued_opcode is set explicitly (not left
+                                    // stale) so a queued Reset's queued_subop==SUB_RESET
+                                    // check in S_WAIT can never alias a queued Loop, and
+                                    // so a queued Loop that exits can never alias a stale
+                                    // queued_opcode==OP_JUMP in resume_addr.
                                     queued_valid  <= 1'b1;
                                     queued_subop  <= SUB_LOOP;
+                                    queued_opcode <= OP_GLOBAL;
                                     queued_target <= g_ext[LOOP_W-1:0];
                                     state_num     <= state_num + 1'b1;
                                 end else begin
@@ -603,6 +668,7 @@ module ptsg_core #(
                         if (in_queued_band) begin  // After Prog End inside Stay window: queue a Jump   // (immediate target).
                             queued_valid  <= 1'b1;                                                      //
                             queued_opcode <= OP_JUMP;                                                   //
+                            queued_subop  <= SUB_NOP;   // RH014: non-SUB_RESET sentinel — see Loop Q   //
                             queued_target <= operand;                                                   //
                             state_num     <= state_num + 1'b1;                                          //
                         end                                                                             //    
@@ -644,7 +710,8 @@ module ptsg_core #(
 
                         // Apply a queued Loop's counter update. The resume target
                         // itself is computed by the combinational resume_addr wire.
-                        if (queued_valid && (queued_subop == SUB_LOOP)) begin
+                        if (queued_valid && (queued_subop == SUB_LOOP) &&
+                            (queued_opcode == OP_GLOBAL)) begin
                             if (loop_exits(loop_cnt, queued_target)) begin
                                 loop_cnt       <= {LOOP_W{1'b0}};
                                 loop_cnt_match <= 1'b1;
@@ -653,13 +720,29 @@ module ptsg_core #(
                             end
                         end
 
+                        // Queued Reset fires exactly at Stay-timeup (C3-F22 Q
+                        // row: SN -> 0 at firing; C7: drives its own captured
+                        // tsig, not the Stay's held value or zero) — RH014.
+                        // Takes priority over deferred insertion below: the
+                        // jump to state 0 happens on this clock, and since
+                        // window_open is cleared above, a still-pending
+                        // insert_req is simply caught on the next S_RUN clock.
+                        if (queued_valid && (queued_subop == SUB_RESET) &&
+                            (queued_opcode == OP_GLOBAL)) begin
+                            state_num      <= {ADDR_W{1'b0}};
+                            loop_cnt       <= {LOOP_W{1'b0}};
+                            base_addr      <= {ADDR_W{1'b0}};
+                            hr_occupied    <= 1'b0;
+                            stack_depth    <= 16'd0;
+                            timing_signals <= queued_tsig;
+                        end
                         // Deferred insertion (C3-F20). An occupied holding
                         // register spills to the external stack (implicit
                         // push, C3-T6 lean A; the later fsm <= S_PUSH inside
                         // save_or_set overrides the S_RUN assigned above) —
                         // RH013. The saved address is the post-Stay resume
                         // address (no +1 on return, C3-F12).
-                        if (insert_req) begin
+                        else if (insert_req) begin
                             save_or_set(resume_addr, 1'b1, insert_target, 1'b1);
                         end else begin
                             state_num   <= resume_addr;
