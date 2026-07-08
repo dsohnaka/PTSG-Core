@@ -256,6 +256,8 @@ module ptsg_core #(
     reg [7:0]         queued_subop;
     reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
     reg [LOOP_W-1:0]  queued_target;
+    reg [ADDR_W-1:0]  queued_save_state; // RH017: Branch/Call's own address at Q-scan time,
+                                         // for the return-to-after auto-save (C3-F12) at firing
 
     // Queued (Q-band) Reset — independent, parallel reservation (RH015).
     // Set by SUB_RESET's Q-branch; consumed with absolute priority at
@@ -416,6 +418,12 @@ module ptsg_core #(
     // explicitly (Loop/Reset: queued_opcode<=OP_GLOBAL; Jump: queued_subop<=
     // SUB_NOP), so a queued Loop that exits can no longer alias a stale
     // queued_opcode==OP_JUMP left over from an earlier window, and vice versa.
+    // RH017: two Branch cases are folded in here (not-taken; taken-but-
+    // operand-was-0 self-loop, C2-F5, no auto-save) since both are plain
+    // address resolutions. The real taken-with-auto-save case is NOT here —
+    // it needs a register write (hr_state etc., possibly an S_PUSH stall) and
+    // is handled by an explicit save_or_set call in the sequential block
+    // below, which never reads this wire in that case.
     wire [ADDR_W-1:0] resume_addr =
         (queued_valid && (queued_subop == SUB_LOOP) && (queued_opcode == OP_GLOBAL) &&
          !loop_exits(loop_cnt, queued_target)) ? base_addr :
@@ -425,6 +433,10 @@ module ptsg_core #(
         // =============================================================================//
         (queued_valid && (queued_opcode == OP_JUMP)) ? queued_target :                  //
         // =============================================================================//
+        (queued_valid && (queued_opcode == OP_BRANCH) && condition) ?
+            (queued_save_state + 1'b1) :
+        (queued_valid && (queued_opcode == OP_BRANCH) &&
+         (queued_target[ADDR_W-1:0] == queued_save_state)) ? queued_save_state :
         (state_num + 1'b1);
 
     always @(posedge clk) begin
@@ -449,6 +461,7 @@ module ptsg_core #(
                                             // never matching OP_JUMP) but a genuine simulation
                                             // gap — see resume_addr's queued_opcode==OP_JUMP arm.
             queued_target   <= {LOOP_W{1'b0}};
+            queued_save_state <= {ADDR_W{1'b0}};
             pending_reset   <= 1'b0;
             pending_reset_tsig <= {TSIG_W{1'b0}};
             stay_cnt        <= {(CNT_W+1){1'b0}};
@@ -704,19 +717,27 @@ module ptsg_core #(
                     // --------------------------------------------------------
                     OP_BRANCH: begin
                         // =============================================================================//
-                        // REVISION HISTORY 012                                                         //
+                        // REVISION HISTORY 012 / 017                                                   //
                         // 2026-07-07 Claude Code  Mod : Branch is band-templated per §3.4b:            //
                         //      FG drives tsig and decides on the next prescaler tick (C4-F8 —          //
                         //      previously it decided on the next clock, un-prescaled);                 //
                         //      BG holds the timing signals (previously it drove them) and decides      //
-                        //      on the next clock at full system rate;                                  //
-                        //      Q should reserve the operand and evaluate Condition at Stay-timeup      //
-                        //      (§3.4b Branch Q row) — deferred to the Phase-3 generalized              //
-                        //      reservation register; until then a Q-band Branch behaves like BG        //
-                        //      (documented deviation).                                                 //
+                        //      on the next clock at full system rate.                                  //
+                        // 2026-07-08 Claude Code  Mod : Q now genuinely reserves and defers to          //
+                        //      Stay-timeup (§3.4b Branch Q row), replacing the earlier "behaves like    //
+                        //      BG" placeholder. Scan time captures this Branch's own address            //
+                        //      (queued_save_state, for the return-to-after auto-save, C3-F12) and       //
+                        //      the taken-target (queued_target = save_state + operand — operand 0       //
+                        //      naturally falls out as target == save_state, the self-loop idiom).       //
+                        //      Condition is evaluated live at firing (S_WAIT), not captured here.       //
                         // =============================================================================//
                         if (in_queued_band) begin                    // as Que command (after Prog End) //
-                            branch_decide;             // TODO Phase 3: reserve, evaluate at timeup     //
+                            queued_valid      <= 1'b1;                                                  //
+                            queued_opcode     <= OP_BRANCH;                                              //
+                            queued_subop      <= SUB_NOP;        // sentinel; disambiguated by opcode    //
+                            queued_save_state <= state_num;      // this Branch's own address            //
+                            queued_target     <= state_num + operand;  // taken-target (implicit zero-ext)//
+                            state_num         <= state_num + 1'b1;     // scan on                        //
                         end                                                                             //
                         else if (window_open) begin       // as background command (inside Stay window) //
                             branch_decide;                     // tsig held; full-clock decision        //
@@ -833,13 +854,31 @@ module ptsg_core #(
                                 end
                             end
 
+                            // RH017: a queued Branch that is TAKEN (Condition
+                            // false at firing) and not the operand-0 self-loop
+                            // degenerate case (C2-F5, no auto-save there) needs
+                            // an auto-save (C2-F6) — a register write, possibly
+                            // an S_PUSH stall — so it cannot be folded into the
+                            // resume_addr wire like the not-taken / self-loop
+                            // cases already are. Mutually exclusive with the
+                            // deferred-insertion save_or_set below (only one
+                            // save_or_set per clock): a simultaneously-pending
+                            // insertion is simply left pending, caught on the
+                            // next S_RUN clock (window_open is already 0),
+                            // the same deferral style as C3-F20/RH013.
+                            if (queued_valid && (queued_opcode == OP_BRANCH) &&
+                                !condition &&
+                                (queued_target[ADDR_W-1:0] != queued_save_state)) begin
+                                save_or_set(queued_save_state, 1'b0,
+                                            queued_target[ADDR_W-1:0], 1'b0);
+                            end
                             // Deferred insertion (C3-F20). An occupied holding
                             // register spills to the external stack (implicit
                             // push, C3-T6 lean A; the later fsm <= S_PUSH inside
                             // save_or_set overrides the S_RUN assigned above) —
                             // RH013. The saved address is the post-Stay resume
                             // address (no +1 on return, C3-F12).
-                            if (insert_req) begin
+                            else if (insert_req) begin
                                 save_or_set(resume_addr, 1'b1, insert_target, 1'b1);
                             end else begin
                                 state_num   <= resume_addr;

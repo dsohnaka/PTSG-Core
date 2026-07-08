@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T14, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T17, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -108,13 +108,17 @@ reference resolves them according to the contributor's documented leans:
 This is a readable reference, not a fully-elaborated production core. The
 following are faithful to the canonical patterns but simplified:
 
-- **Queued band (after Prog End)** implements a single queued-operation slot and
-  supports the canonical queued **Loop** and **Jump**. **Reset** is queued
+- **Queued band (after Prog End)** implements a single queued-operation slot
+  shared by the canonical queued **Loop**, **Jump**, and (since Phase 3a)
+  **Branch** — taken (auto-save + jump, with the operand-0 self-loop idiom
+  correctly exempted from auto-save per C2-F5), not-taken, evaluating
+  Condition live at Stay-timeup per §3.4b's Branch Q row. **Reset** is queued
   separately (its own independent reservation, not sharing this slot) and wins
-  with absolute priority at Stay-timeup over whatever the slot holds. Other
-  internal-mode commands placed after Prog End execute immediately (documented
-  deviation; generalizing the shared slot to all commands, with SN-overwrite
-  HALT, is Phase 3 / C8 work).
+  with absolute priority at Stay-timeup over whatever the slot holds. **Call**
+  and **Return** still execute immediately regardless of band (documented
+  deviation; queuing them is Phase 3b/3c work). Overwrite arbitration beyond
+  simple last-write-wins (C8's SN-reservation-overwrite HALT) needs the
+  Phase-4 S_HALT machinery and is not yet implemented.
 - **Indirect read for a queued Loop or Jump** is not performed; a queued Loop
   uses its literal D16–D31 target (`0` ⇒ zero iterations, C4-V1), and a queued
   Jump(0) is treated the same way — queued as the literal address 0, not

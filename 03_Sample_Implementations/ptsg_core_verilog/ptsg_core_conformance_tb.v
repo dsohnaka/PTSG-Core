@@ -51,6 +51,13 @@
 //    T14 — RH016 regression: a background indirect Jump remains
 //         immediate (full system clock) with tsig held, matching
 //         literal BG Jump.
+//    T15 — RH017 (Phase 3a): a queued (Q-band) Branch, taken, auto-saves
+//         its own address and jumps to the taken-target at Stay-timeup; a
+//         subsequent Return resumes at save_state+1 (C3-F12).
+//    T16 — RH017: a queued Branch, not taken, resumes at save_state+1
+//         with no auto-save (C2-F5).
+//    T17 — RH017: a queued Branch with operand 0 (self-loop idiom),
+//         taken, resumes at its own address with no auto-save.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -506,6 +513,86 @@ module ptsg_core_conformance_tb;
         else begin
             $display("FAIL T14: own-tsig-shown=%0d window-completed=%0d", seen, visits);
             errors=errors+1; end
+
+        // ================================================================
+        // T15 — RH017: a queued (Q-band) Branch, taken (Condition=0),
+        //      auto-saves its own address and jumps to save_state+operand
+        //      at Stay-timeup; a subsequent Return correctly resumes at
+        //      save_state+1 (return-to-after, C3-F12), proving the
+        //      auto-save captured the Branch's own address, not the
+        //      Stay's.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_BRANCH(16'h0000,12'd4); // Q: Branch, target = 4+4 = 8
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0555);          // Q-scan continues; also return-to-after landing
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // taken-branch landing marker
+        dut.ptsg_imem.g_sim.mem[9]=I_RETURN(16'h0AAA);       // verify auto-save via Return
+        condition=0;   // held false throughout => Branch taken when evaluated at firing
+        start;
+        seen=0; visits=0;   // seen: 0x0888 observed; visits: 0x0555 observed AFTER that
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0888) seen=1;
+            if (seen && timing_signals===16'h0555) begin visits=1; k=300; end
+        end
+        if (seen && visits)
+            $display("PASS T15: Q Branch taken -> auto-save + jump; Return resumed at save_state+1");
+        else begin
+            $display("FAIL T15: taken-landed=%0d return-resumed=%0d", seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T16 — RH017: a queued (Q-band) Branch, NOT taken
+        //      (Condition=1), resumes at save_state+1 (the ordinary
+        //      "advance" case, C2-F5) with no auto-save.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_BRANCH(16'h0000,12'd4); // Q: Branch (not taken, condition=1)
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0666);          // correct not-taken resume target
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);
+        condition=1;
+        start;
+        seen=0;
+        for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
+            if (timing_signals===16'h0666) begin seen=1; k=200; end end
+        if (seen) $display("PASS T16: Q Branch not-taken resumed at save_state+1 (no auto-save)");
+        else begin $display("FAIL T16: never observed the not-taken resume marker (0x0666)");
+            errors=errors+1; end
+        condition=0;
+
+        // ================================================================
+        // T17 — RH017: a queued (Q-band) Branch with operand 0
+        //      (self-loop idiom, C2-F5), taken, resumes at its own
+        //      address with NO auto-save (hr_occupied stays 0) — the
+        //      self-loop semantics carried into the Q band.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_BRANCH(16'h0777,12'd0); // Q: Branch operand=0 (self-loop idiom)
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0001,12'd4);
+        condition=0;
+        start;
+        seen=0;
+        for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
+            if (state_number===12'd4 && timing_signals===16'h0777) begin seen=1; k=200; end end
+        if (seen && !dut.hr_occupied)
+            $display("PASS T17: Q Branch self-loop (operand 0) resumed at own address, no auto-save");
+        else begin
+            $display("FAIL T17: landed=%0d hr_occupied=%b", seen, dut.hr_occupied);
+            errors=errors+1; end
+        condition=0;
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);
