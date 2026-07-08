@@ -193,6 +193,21 @@
 //                                          Base Set whose Loop lies in the BG window) is deferred to Phase
 //                                          5, since Base Set's Q semantics (C3-F25, Stay Start State) are
 //                                          not yet implemented.
+// 025 2026-07-08       Claude Code   Add : Phase 5 (C3-F25, PROVISIONAL) — new stay_start_state register:
+//                                          a FOREGROUND Stay Set (window_open reads 0) writes its own
+//                                          address here; BG/Q Stay Set (re-arming an already-open window)
+//                                          do not. Base Set is genuinely band-split for the first time: Q
+//                                          now loads Base := Stay Start State (the time-axis origin)
+//                                          instead of the old "behaves like BG" placeholder, so a
+//                                          non-exiting queued Loop's jump-back restarts the WHOLE window
+//                                          (the self-loop pattern the spec's worked illustration
+//                                          describes) rather than resuming a scan position. Closes the
+//                                          Q-band half of C3-F24's Base Set<->Loop pairing rule Phase 4e
+//                                          deferred: a new q_base_pending tracker (set by a Q Base Set,
+//                                          cleared the moment a Q Loop is reserved — paired either way,
+//                                          whether that Loop exits this lap or loops back for another)
+//                                          HALTs at Stay-timeup if still 1 (checked after pending_reset,
+//                                          which still wins unconditionally).
 //
 // ============================================================================
 
@@ -314,14 +329,35 @@ module ptsg_core #(
     reg               window_open;      // Set by Stay Set, cleared at Stay-timeup
     reg               prog_end_seen;    // Set by Prog End inside an open window
 
-    // Base Set<->Loop band-pairing tracker (Phase 4e, C3-F24, BG side only) --
+    // Base Set<->Loop band-pairing tracker (Phase 4e, C3-F24, BG side) -------
     // Set by a BG Base Set; cleared by a BG Loop's successful exit. If a BG
     // Prog End is reached while this is still 1, the Base Set was never
     // paired with an exiting Loop -- a runaway error, HALT. Cleared by Stay
-    // Set (fresh window). The Q-band half of this check (a queued Base Set
-    // whose Loop lies in the BG window) is deferred to Phase 5, since Base
-    // Set's Q semantics (C3-F25, Stay Start State) are not yet implemented.
+    // Set (fresh window) and Reset.
     reg               base_pending;
+
+    // Stay Start State register (Phase 5, C3-F25, PROVISIONAL) ---------------
+    // Gives the time axis its own notion of "here": a FOREGROUND Stay Set
+    // writes its own State Number here; BG/Q Stay Set (re-arming an
+    // already-open window) do not touch it. Valid only within the same Stay
+    // cycle -- a Q-band Base Set hands it to base_addr (Base := Stay Start
+    // State, the time-axis origin, vs. BG Base Set's Base := current State
+    // Number); if no Q Base Set occurs, the next Stay Set simply overwrites
+    // it. Reset 0; no Core-level external visibility (a Formation may copy
+    // it out via a general register).
+    reg [ADDR_W-1:0]  stay_start_state;
+
+    // Q-band Base Set<->Loop band-pairing tracker (Phase 5, C3-F24 Q half) ---
+    // Set by a Q Base Set; cleared the moment a Q Loop is RESERVED (scan
+    // time, not fire time) -- once a Loop reservation exists, the Base Set
+    // is paired, whether that Loop exits this lap or jumps back to
+    // Base (= Stay Start State) for another one (the self-loop pattern,
+    // C3-F25 -- not a violation either way). If Stay-timeup arrives with
+    // this still 1, no Q Loop was ever reserved to consume it -- HALT (the
+    // Q-side mirror of base_pending above; this is the "queued Base Set
+    // whose Loop lies in the BG window" cell Phase 4e deferred, read here
+    // as "the Q Base Set has nothing queued to pair with it").
+    reg               q_base_pending;
 
     // Single queued-operation slot (queued band, C3-T2 FIFO depth-1) ---------
     // RH015: Reset does NOT use this slot. Per architect ruling (2026-07-08),
@@ -556,6 +592,8 @@ module ptsg_core #(
             window_open     <= 1'b0;
             prog_end_seen   <= 1'b0;
             base_pending    <= 1'b0;
+            stay_start_state <= {ADDR_W{1'b0}};
+            q_base_pending  <= 1'b0;
             queued_valid    <= 1'b0;
             queued_subop    <= 8'd0;
             queued_opcode   <= OP_GLOBAL;  // RH014 hygiene: was never reset (X in sim);
@@ -678,6 +716,8 @@ module ptsg_core #(
                                     loop_cnt       <= {LOOP_W{1'b0}};                                          //
                                     base_addr      <= {ADDR_W{1'b0}};                                          //
                                     base_pending   <= 1'b0;         // panic clears the loop scaffold too       //
+                                    stay_start_state <= {ADDR_W{1'b0}};                                        //
+                                    q_base_pending <= 1'b0;                                                    //
                                     hr_occupied    <= 1'b0;                                                    //
                                     stack_depth    <= 16'd0;                                                   //
                                     stay_cnt       <= {(CNT_W+1){1'b0}};       // arm to 0, don't start (§3.4b) //
@@ -688,6 +728,8 @@ module ptsg_core #(
                                     loop_cnt       <= {LOOP_W{1'b0}};                                          //
                                     base_addr      <= {ADDR_W{1'b0}};                                          //
                                     base_pending   <= 1'b0;                                                    //
+                                    stay_start_state <= {ADDR_W{1'b0}};                                        //
+                                    q_base_pending <= 1'b0;                                                    //
                                     hr_occupied    <= 1'b0;                                                    //
                                     stack_depth    <= 16'd0;                                                   //
                                     timing_signals <= tsig;               // own field, not cleared (C7)       //
@@ -696,15 +738,24 @@ module ptsg_core #(
                             end
                             SUB_BASESET: begin
                                 // =============================================================================//
-                                // REVISION HISTORY 020 (Phase 4b)                                              //
-                                // 2026-07-08 Claude Code  Mod : Base Set gains its first band-awareness: FG    //
-                                //      is §3.4b-illegal (C3-F23) -> runaway error, HALT (C3-F24). BG/Q keep    //
-                                //      the existing immediate behavior for now — real Q semantics (Base :=     //
-                                //      Stay Start State, C3-F25) are Phase 5 work; until then Q Base Set        //
-                                //      behaves like BG here (documented deviation, matching the                //
-                                //      Return/Call/Loop FG-HALT-pending pattern Phase 3 left open).             //
+                                // REVISION HISTORY 025 (Phase 5)                                               //
+                                // 2026-07-08 Claude Code  Mod : Base Set is now genuinely band-split per        //
+                                //      §3.4b/C3-F25 (PROVISIONAL): BG keeps Base := current State Number       //
+                                //      (space-axis; must be paired by a BG Loop exit before Prog End, or        //
+                                //      HALT, C3-F24/Phase 4e). Q now loads Base := Stay Start State (the        //
+                                //      time-axis origin captured by the window's own FG Stay Set) instead of    //
+                                //      the old "behaves like BG" placeholder -- this is what makes a queued      //
+                                //      Loop's non-exit jump restart the WHOLE window (the self-loop pattern,    //
+                                //      C3-F25's worked illustration) rather than just a scan position. FG       //
+                                //      remains §3.4b-illegal (C3-F23) -> HALT (C3-F24), unchanged.              //
                                 // =============================================================================//
-                                if (window_open) begin      // as background (or, pending Phase 5, Que) command //
+                                if (in_queued_band) begin                    // as Que command (after Prog End) //
+                                    base_addr      <= stay_start_state;                                         //
+                                    q_base_pending <= 1'b1;    // Phase 5: must be paired by a queued Loop      //
+                                                                // reservation before Stay-timeup, or HALT.      //
+                                    state_num      <= state_num + 1'b1;                                         //
+                                end                                                                             //
+                                else if (window_open) begin       // as background command (inside Stay window) //
                                     // Mark the current address as the Loop base and
                                     // advance. The base address is where Loop jumps
                                     // back to, so a loop re-enters this state every
@@ -726,10 +777,20 @@ module ptsg_core #(
                             SUB_STAYSET: begin
                                 // Open the window; clear/arm the stay counter
                                 // (C4-T4 lean B: ticking happens only in S_WAIT).
+                                // Phase 5 (C3-F25, PROVISIONAL): a FOREGROUND Stay Set (window_open
+                                // reads 0 here -- this is a fresh window, not a re-arm of an
+                                // already-open one) writes its own address to Stay Start State,
+                                // valid only through this Stay cycle. BG/Q Stay Set (re-arming a
+                                // window already open, e.g. as a Call/Loop target) do not touch it,
+                                // per the §3.4b table (only the FG row mentions this feature).
+                                if (!window_open) begin
+                                    stay_start_state <= state_num;
+                                end
                                 window_open    <= 1'b1;
                                 prog_end_seen  <= 1'b0;
                                 queued_valid   <= 1'b0;
                                 base_pending   <= 1'b0;   // fresh window: no dangling Base Set (Phase 4e)
+                                q_base_pending <= 1'b0;   // fresh window: no dangling Q Base Set (Phase 5)
                                 stay_cnt       <= {(CNT_W+1){1'b0}};
                                 timing_signals <= tsig;   // held during the band
                                 state_num      <= state_num + 1'b1;
@@ -835,11 +896,14 @@ module ptsg_core #(
                                     if (queued_valid) begin
                                         halt;
                                     end else begin
-                                        queued_valid  <= 1'b1;
-                                        queued_subop  <= SUB_LOOP;
-                                        queued_opcode <= OP_GLOBAL;
-                                        queued_target <= g_ext[LOOP_W-1:0];
-                                        state_num     <= state_num + 1'b1;
+                                        queued_valid   <= 1'b1;
+                                        queued_subop   <= SUB_LOOP;
+                                        queued_opcode  <= OP_GLOBAL;
+                                        queued_target  <= g_ext[LOOP_W-1:0];
+                                        q_base_pending <= 1'b0;   // Phase 5: paired -- a Loop is now
+                                                                   // reserved to consume this Q Base Set,
+                                                                   // whether it exits this lap or not.
+                                        state_num      <= state_num + 1'b1;
                                     end
                                 end else if (window_open) begin
                                     // Immediate background Loop (literal target;
@@ -1056,6 +1120,8 @@ module ptsg_core #(
                             loop_cnt        <= {LOOP_W{1'b0}};
                             base_addr       <= {ADDR_W{1'b0}};
                             base_pending    <= 1'b0;
+                            stay_start_state <= {ADDR_W{1'b0}};
+                            q_base_pending  <= 1'b0;
                             hr_state        <= {ADDR_W{1'b0}};
                             hr_loop         <= {LOOP_W{1'b0}};
                             hr_base         <= {ADDR_W{1'b0}};
@@ -1075,7 +1141,23 @@ module ptsg_core #(
                             pend_is_insert  <= 1'b0;
                             // insert_req (if still asserted) is simply caught on the next
                             // S_RUN clock, now that window_open reads 0 — no special handling.
-                        end else begin
+                        end
+                        // =============================================================================//
+                        // REVISION HISTORY 025 (Phase 5, C3-F24 Q half, PROVISIONAL)                   //
+                        // A Q Base Set with no queued Loop ever reserved to consume it by the time      //
+                        // its window reaches Stay-timeup is an unpaired Base Set<->Loop across bands    //
+                        // (the Q-side mirror of Phase 4e's BG check) -- a runaway error, HALT. Checked  //
+                        // second, after pending_reset (which still wins unconditionally -- q_base_pending//
+                        // is already cleared above if a Reset just fired) and before the ordinary       //
+                        // queued dispatch below, which a HALT here preempts entirely (state_num is left //
+                        // untouched, freezing at the Stay that exposed the gap).                        //
+                        // =============================================================================//
+                        else if (q_base_pending &&
+                                 !(queued_valid && (queued_subop == SUB_LOOP) &&
+                                   (queued_opcode == OP_GLOBAL))) begin
+                            halt;
+                        end
+                        else begin
                             // Apply a queued Loop's counter update. The resume target
                             // itself is computed by the combinational resume_addr wire.
                             if (queued_valid && (queued_subop == SUB_LOOP) &&

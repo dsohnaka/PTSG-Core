@@ -92,6 +92,14 @@
 //    T27 — C3-F24 (Phase 4e): a BG Base Set never paired with an exiting
 //         Loop HALTs at the Prog End that exposes it (BG side only; the
 //         Q-band half is deferred to Phase 5).
+//    T28 — C3-F25 (Phase 5, PROVISIONAL): a FOREGROUND Stay Set writes Stay
+//         Start State; a queued Base Set loads Base := Stay Start State
+//         (not scan position), so a non-exiting queued Loop's jump-back
+//         re-executes the WHOLE window (the self-loop pattern) rather than
+//         just resuming a scan position.
+//    T29 — C3-F24 (Phase 5, Q half, PROVISIONAL): a queued Base Set with no
+//         Loop ever reserved to consume it HALTs at Stay-timeup (the
+//         Q-side mirror of T27, closing the cell Phase 4e deferred).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -929,6 +937,63 @@ module ptsg_core_conformance_tb;
             $display("PASS T27: unpaired BG Base Set<->Loop across the BG->Q boundary -> HALT (C3-F24)");
         else begin
             $display("FAIL T27: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T28 — C3-F25 (Phase 5, PROVISIONAL): the Stay Start State
+        //      register + Q Base Set self-loop pattern. A FOREGROUND Stay
+        //      Set at s1 writes Stay Start State := 1. A queued Base Set
+        //      loads Base := Stay Start State (not the scan-position
+        //      semantics BG Base Set uses), so a queued Loop that does NOT
+        //      yet exit (target=2: one non-exiting lap, then exits) jumps
+        //      back to s1 -- the ENTIRE window re-executes (BG marker at
+        //      s2 is visited twice), not just a scan position -- before
+        //      finally exiting cleanly with no HALT.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);      // FG: stay_start_state <= 1
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0AAA);          // BG marker, re-executed each lap
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_BASESET(16'h0000);      // Q: base_addr <= stay_start_state (=1)
+        dut.ptsg_imem.g_sim.mem[5]=I_LOOP(16'h0002);         // Q: target=2 -> one non-exiting lap, then exits
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0BBB,12'd4);   // Q: closes the window once the loop exits
+        dut.ptsg_imem.g_sim.mem[7]=I_JUMP(16'h0BBB,12'd7);   // FG halt (self-loop); otherwise falling
+                                                              // through into blank (all-zero) memory
+                                                              // decodes as Reset and restarts the whole
+                                                              // program, muddying the lap count below
+        start;
+        visits=0;
+        for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
+            if (state_number===12'd2) visits=visits+1;
+        end
+        if (dut.stay_start_state===12'd1 && dut.base_addr===12'd1 &&
+            visits>=2 && dut.error_flag===1'b0)
+            $display("PASS T28: Q Base Set loaded Stay Start State; self-loop re-executed the window (%0d laps)",
+                     visits);
+        else begin
+            $display("FAIL T28: stay_start_state=%0d base_addr=%0d laps=%0d error_flag=%b",
+                     dut.stay_start_state, dut.base_addr, visits, dut.error_flag);
+            errors=errors+1; end
+
+        // ================================================================
+        // T29 — C3-F24 (Phase 5, Q half, PROVISIONAL): a Q Base Set with NO
+        //      Loop ever reserved to consume it before Stay-timeup (the
+        //      Q-side mirror of T27) HALTs at that Stay-timeup.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_BASESET(16'h0000);      // Q: q_base_pending <= 1, never paired
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0BBB,12'd4);   // Q: Stay-timeup with no Loop ever queued -> HALT
+        start;
+        repeat (40) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd5)
+            $display("PASS T29: unpaired Q Base Set<->Loop -> HALT at Stay-timeup (C3-F24)");
+        else begin
+            $display("FAIL T29: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
