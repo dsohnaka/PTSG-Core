@@ -158,6 +158,19 @@
 //                                          the "documented deviation" gaps Phase 3 left open. need_ind_loop
 //                                          gained a window_open term so an FG indirect-target Loop reaches
 //                                          the same HALT trap instead of resolving via S_IND first.
+// 021 2026-07-08       Claude Code   Add : Phase 4c — Prog End gains two HALT traps (C3-F24): a stray/
+//                                          duplicate Prog End scanned while already in the Q band
+//                                          (in_queued_band) HALTs, and FG Prog End (previously a silent
+//                                          "blank shot" no-op) now HALTs too (C3-F23, window-only). BG
+//                                          (first shot, opens the Q band) keeps its existing behavior.
+// 022 2026-07-08       Claude Code   Fix : S_HALT's insertion-rescue path never returned the FSM to
+//                                          S_RUN (save_or_set only sets fsm on its S_PUSH branch; its
+//                                          other call sites are already S_RUN, so the "leave fsm alone"
+//                                          default silently meant "stay" there but meant "stay stuck in
+//                                          S_HALT forever" here) — found while adding the first test that
+//                                          actually exercises an S_HALT rescue (T22/T23 below had none
+//                                          before). Now sets fsm <= S_RUN explicitly (overridden by
+//                                          save_or_set's own S_PUSH assignment when hr_occupied).
 //
 // ============================================================================
 
@@ -794,9 +807,26 @@ module ptsg_core #(
                                 end
                             end
                             SUB_PROGEND: begin
-                                // Close the immediate band (blank shot if no window).
-                                if (window_open) prog_end_seen <= 1'b1;
-                                state_num <= state_num + 1'b1;
+                                // =============================================================================//
+                                // REVISION HISTORY 021 (Phase 4c)                                              //
+                                // 2026-07-08 Claude Code  Mod : Prog End is band-templated per §3.4b and gains  //
+                                //      two HALT traps (C3-F24): a second Prog End scanned while already in the //
+                                //      Q band (in_queued_band, i.e. a stray/duplicate BG->Q boundary) HALTs,   //
+                                //      and FG Prog End -- previously a silent "blank shot" advance with no     //
+                                //      window to close -- now HALTs too (C3-F23, window-only). BG (first shot, //
+                                //      opens the Q band) keeps its existing behavior.                          //
+                                // =============================================================================//
+                                if (in_queued_band) begin                    // stray 2nd Prog End in Q band     //
+                                    halt;                                                                       //
+                                end                                                                             //
+                                else if (window_open) begin       // as background command: opens the Q band    //
+                                    prog_end_seen <= 1'b1;                                                      //
+                                    state_num     <= state_num + 1'b1;                                          //
+                                end                                                                             //
+                                else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
+                                    halt;                                                                       //
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             default: begin
                                 // NOP (sub-op 7) and reserved 8-255: present tsig.
@@ -1155,6 +1185,14 @@ module ptsg_core #(
             S_HALT: begin
                 if (insert_req) begin
                     error_flag <= 1'b0;
+                    // RH022: save_or_set only ever sets fsm to S_PUSH (spill
+                    // case) or leaves it unassigned (its S_RUN call sites are
+                    // already S_RUN, so "unassigned" correctly means "stay").
+                    // From S_HALT that default would leave the FSM stuck here
+                    // forever, so the rescue must claim S_RUN itself; the
+                    // task's own S_PUSH assignment (if hr_occupied) executes
+                    // after this one and correctly overrides it.
+                    fsm <= S_RUN;
                     save_or_set(state_num, 1'b1, insert_target, 1'b1);
                 end
             end

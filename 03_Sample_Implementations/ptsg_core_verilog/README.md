@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot last-write-wins). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot last-write-wins, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T21, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T25, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -110,25 +110,31 @@ running them: **C3-F23** (the FG-Global exclusion principle) says only
 Reset, Stay Set and NOP are legal as foreground (outside-a-window) Global
 commands — Base Set, Return, Sub-sequence Call, Loop and Prog End are
 window-only. This implementation detects the FG-illegal case for Base Set,
-Return, Call and Loop (Prog End's FG/duplicate-in-Q case is Phase 4c,
-not yet implemented) and enters a dedicated **`S_HALT`** state per
-**C3-F24**: State Number holds at the violating instruction, the registered
-`error_flag` output is raised, and the FSM stays there — the same
-capture a SignalTap trigger would want — until either a hardware reset or
-an `insert_req` rescues the core (insertion clears `error_flag` and jumps
-via the normal auto-save path, so a supervising Formation can log the
-fault and resume at a known-good handler address).
+Return, Call, Loop and Prog End, and also detects a stray/duplicate Prog
+End scanned while already in the Q band, and enters a dedicated
+**`S_HALT`** state per **C3-F24**: State Number holds at the violating
+instruction, the registered `error_flag` output is raised, and the FSM
+stays there — the same capture a SignalTap trigger would want — until
+either a hardware reset or an `insert_req` rescues the core (insertion
+clears `error_flag` and jumps via the normal auto-save path, so a
+supervising Formation can log the fault and resume at a known-good handler
+address). A rescue handler that itself ends in a Return must open its own
+Stay window first (Stay Set is always FG-legal) — Return remains
+window-only even when reached via an insertion.
 
 コアは、命令として実行する代わりに罠にかける、定義済みの違法命令クラスを持つ。
 **C3-F23**（FG-Global排他原則）は、フォアグラウンド（窓外）のGlobalコマンドとして
 合法なのは Reset・Stay Set・NOP のみであり、Base Set・Return・サブシーケンスCall・
 Loop・Prog End はウィンドウ限定であると規定する。本実装は Base Set・Return・Call・
-Loop についてFG違法条件を検出し（Prog EndのFG／Q帯域内2発目のケースはPhase 4cで
-未実装）、**C3-F24** に従って専用の **`S_HALT`** ステートに入る：State Numberは違反
-命令で保持され、レジスタ化された `error_flag` 出力が立ち、ハードウェアリセットか
-`insert_req` がコアを救出するまでFSMはそこに留まる（挿入は `error_flag` をクリアし、
-通常の自動保存経路でジャンプするため、監督Formationは障害を記録し既知の正常な
-ハンドラアドレスから再開できる）。
+Loop・Prog End についてFG違法条件を検出し、さらにQ帯域内で既にProg Endを一度
+消費した後の迷子・重複Prog Endも検出したうえで、**C3-F24** に従って専用の
+**`S_HALT`** ステートに入る：State Numberは違反命令で保持され、レジスタ化された
+`error_flag` 出力が立ち、ハードウェアリセットか `insert_req` がコアを救出する
+までFSMはそこに留まる（挿入は `error_flag` をクリアし、通常の自動保存経路で
+ジャンプするため、監督Formationは障害を記録し既知の正常なハンドラアドレスから
+再開できる）。Returnで終わる救出ハンドラは、自身のStay窓を先に開く必要がある
+（Stay SetはFGでも常に合法）——挿入経由で到達した場合でも、Returnはウィンドウ
+限定のままである。
 
 | RTL name | Kind | Meaning |
 |---|---|---|

@@ -74,6 +74,18 @@
 //         a Loop queued first is unconditionally overwritten by a Branch
 //         queued second (SN-reservation-overwrite HALT is Phase-4 work,
 //         not tested here).
+//    T22 — C3-F23/C3-F24 (Phase 4b): a foreground-illegal Global command
+//         (Base Set, representative of Base Set/Return/Call/Loop) HALTs —
+//         error_flag raises and State Number freezes at the violator.
+//    T23 — C3-F24 (Phase 4a/RH022): an insertion rescues the core from
+//         S_HALT — error_flag clears, the halted address auto-saves, and
+//         the FSM actually returns to S_RUN (a real bug found while
+//         writing this test: the S_HALT case never explicitly re-armed
+//         fsm, so it stayed stuck there forever after the first rescue).
+//    T24 — C3-F24 (Phase 4c): a second Prog End scanned while already in
+//         the Q band (stray/duplicate BG->Q boundary) HALTs.
+//    T25 — C3-F23/C3-F24 (Phase 4c): a foreground Prog End (previously a
+//         silent "blank shot" no-op) now HALTs.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -774,6 +786,92 @@ module ptsg_core_conformance_tb;
         else begin $display("FAIL T21: never observed the Branch-won marker (0x0888) — last-write-wins broken?");
             errors=errors+1; end
         condition=0;
+
+        // ================================================================
+        // T22 — C3-F23/C3-F24 (Phase 4b): a foreground-illegal Global
+        //      command (Base Set, representative of Base Set/Return/Call/
+        //      Loop -- all four share the same halt task) HALTs: error_flag
+        //      raises and State Number freezes at the violating instruction.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_BASESET(16'h0000);   // FG Base Set (no window ever opened) -> HALT
+        start;
+        repeat (30) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd1)
+            $display("PASS T22: FG Base Set is illegal (C3-F23) -> HALT (error_flag raised, state frozen at s1)");
+        else begin
+            $display("FAIL T22: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T23 — C3-F24 escape route: an insertion rescues the core from
+        //      S_HALT — error_flag clears, the halted address is
+        //      auto-saved (hr_ins=1, C3-T7) exactly like an ordinary
+        //      insertion, and the handler runs immediately (RH022 fix:
+        //      the FSM actually returns to S_RUN instead of staying stuck
+        //      in S_HALT, a bug found while writing this test).
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_BASESET(16'h0000);   // FG Base Set -> HALT at s1
+        dut.ptsg_imem.g_sim.mem[10]=I_NOP(16'h0EEE);      // rescue-handler landing marker
+        dut.ptsg_imem.g_sim.mem[11]=I_JUMP(16'h0EEE,12'd11); // halt (self-loop; a blank all-zero word
+                                                              // decodes as Reset, which would otherwise
+                                                              // panic state_number back to 0 and re-HALT)
+        start;
+        k=0; while (dut.fsm!==3'd5 && k<30) begin @(posedge clk); #1; k=k+1; end
+        if (dut.fsm!==3'd5) begin
+            $display("FAIL T23 setup: never reached S_HALT"); errors=errors+1;
+        end else begin
+            insert_req=1; insert_target=12'd10;
+            seen=0;
+            for (k=0;k<30;k=k+1) begin @(posedge clk); #1;
+                if (insert_ack) insert_req=0;
+                if (timing_signals===16'h0EEE) seen=1;
+            end
+            if (seen && dut.fsm===3'd0 && dut.error_flag===1'b0 && dut.hr_state===12'd1 && dut.hr_ins===1'b1)
+                $display("PASS T23: insertion rescued S_HALT (error_flag cleared, handler ran, halted addr auto-saved)");
+            else begin
+                $display("FAIL T23: landed=%0d fsm=%0d error_flag=%b hr_state=%0d hr_ins=%b",
+                         seen, dut.fsm, dut.error_flag, dut.hr_state, dut.hr_ins);
+                errors=errors+1; end
+            insert_req=0;
+        end
+
+        // ================================================================
+        // T24 — C3-F24 (Phase 4c): a second Prog End scanned while already
+        //      in the Q band (a stray/duplicate BG->Q boundary) HALTs.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);        // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);    // first shot: opens the Q band
+        dut.ptsg_imem.g_sim.mem[4]=I_PROGEND(16'h0000);    // second shot: stray -> HALT
+        start;
+        repeat (30) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd4)
+            $display("PASS T24: stray 2nd Prog End in the Q band -> HALT (state frozen at s4)");
+        else begin
+            $display("FAIL T24: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T25 — C3-F23/C3-F24 (Phase 4c): a foreground Prog End
+        //      (previously a silent "blank shot" no-op, since there was no
+        //      window to close) now HALTs.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_PROGEND(16'h0000);   // FG Prog End (no window ever opened) -> HALT
+        start;
+        repeat (30) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd1)
+            $display("PASS T25: FG Prog End is illegal (C3-F23) -> HALT (state frozen at s1)");
+        else begin
+            $display("FAIL T25: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);
