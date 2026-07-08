@@ -103,9 +103,16 @@
 //    T30 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a BG Stay Set re-kick
 //         holds timing_signals and is tick-gated (period = PRESCALE
 //         clocks through a BG re-kick <-> BG Jump loop).
-//    T31 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a Q Stay Set re-kick does
-//         NOT reset the stay counter -- it continues counting across the
-//         BG->Q boundary.
+//    T31 — C4-F10/§3.4b (Phase 6/RH027, PROVISIONAL): a Q Stay Set is a
+//         pure pass-through -- the stay counter continues across the
+//         BG->Q boundary, no window/queue side effects (firing semantics
+//         await an architect definition, CHANGES C4).
+//    T32 — C3-F25 scaled 2^28 self-loop conformance (CHANGES C6
+//         recommendation): 4 laps x Stay-8, consecutive stay_cnt_match
+//         pulses exactly 8*PRESCALE clocks apart (jitter-free), clean exit.
+//    T33 — C3-F24/RH022: S_HALT insertion rescue with an OCCUPIED holding
+//         register takes the S_PUSH spill path (stack depth 1, hr := the
+//         halted address with hr_ins=1) — the path T23 did not cover.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -1038,9 +1045,11 @@ module ptsg_core_conformance_tb;
             errors=errors+1; end
 
         // ================================================================
-        // T31 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a Q Stay Set
-        //      "re-kick" does NOT reset the stay counter -- it continues
-        //      counting On-Tick, uninterrupted, across the BG->Q boundary.
+        // T31 — C4-F10/§3.4b (Phase 6/RH027, PROVISIONAL): a Q Stay Set is
+        //      a pure pass-through -- it does NOT reset the stay counter
+        //      (counting continues On-Tick, uninterrupted, across the
+        //      BG->Q boundary) and has no window/queue side effects; its
+        //      firing semantics await an architect definition (CHANGES C4).
         // ================================================================
         reset1;
         dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
@@ -1063,6 +1072,88 @@ module ptsg_core_conformance_tb;
         else begin
             $display("FAIL T31: pre-count=%0d post-count=%0d (expected both > 0)", visits, dut.stay_cnt);
             errors=errors+1; end
+
+        // ================================================================
+        // T32 — C3-F25 scaled 2^28 conformance item (the CHANGES C6
+        //      recommendation, "e.g. Loop-4 x Stay-8"): the single-period
+        //      self-loop (StaySet -> ProgEnd -> BaseSet(Q) -> Loop(Q) ->
+        //      Stay) must repeat the whole stay period with jitter-free
+        //      spacing: 4 laps, consecutive stay_cnt_match pulses exactly
+        //      8*PRESCALE = 40 clocks apart, then a clean exit. This is
+        //      the scaled-down form of the 2^28 claim (Stay 12-bit x Loop
+        //      16-bit of continuous exact timing with no prescaler).
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);      // FG: stay_start_state <= 1
+        dut.ptsg_imem.g_sim.mem[2]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[3]=I_BASESET(16'h0000);      // Q: base := stay_start_state (= 1)
+        dut.ptsg_imem.g_sim.mem[4]=I_LOOP(16'h0004);         // Q: 4 laps total (3 jump-backs + exit)
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0001,12'd8);   // Stay 8 (the repeated period)
+        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'hA5A5);          // exit marker
+        dut.ptsg_imem.g_sim.mem[7]=I_JUMP(16'hA5A5,12'd7);   // FG halt
+        start;
+        visits=0; period=0; t_prev=-1; seen=0;
+        for (k=0;k<400;k=k+1) begin
+            @(posedge clk); #1;
+            if (stay_cnt_match===1'b1) begin
+                visits=visits+1;
+                if (t_prev!=-1) begin
+                    if (period==0)              period=k-t_prev;
+                    else if ((k-t_prev)!=period) period=-1;   // jitter -> fail
+                end
+                t_prev=k;
+            end
+            if (timing_signals===16'hA5A5) begin seen=1; k=400; end
+        end
+        if (seen && visits==4 && period==8*PRESCALE && dut.error_flag===1'b0)
+            $display("PASS T32: scaled 2^28 self-loop — 4 laps, jitter-free %0d-clock spacing, clean exit",
+                     period);
+        else begin
+            $display("FAIL T32: exited=%0d laps=%0d spacing=%0d (expected 4 laps @ %0d) error_flag=%b",
+                     seen, visits, period, 8*PRESCALE, dut.error_flag);
+            errors=errors+1; end
+
+        // ================================================================
+        // T33 — C3-F24/RH022 completion: an insertion rescue from S_HALT
+        //      with the holding register OCCUPIED must take the S_PUSH
+        //      spill path (T23 only covered the unoccupied direct path).
+        //      Setup: a BG Call occupies hr (never Returned), the window
+        //      closes, an FG Base Set HALTs, then insertion rescues —
+        //      expect the old context spilled to the external stack
+        //      (depth 1), hr holding the halted address with hr_ins=1,
+        //      error_flag clear, and the handler marker reached.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_CALL(16'd3);            // BG Call; own=2, target=5; hr occupied
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0000);          // subroutine body (BG) — no Return
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd2);   // closes the window (hr still occupied)
+        dut.ptsg_imem.g_sim.mem[7]=I_BASESET(16'h0000);      // FG Base Set -> HALT at s7
+        dut.ptsg_imem.g_sim.mem[10]=I_NOP(16'h0EEE);         // rescue-handler landing marker
+        dut.ptsg_imem.g_sim.mem[11]=I_JUMP(16'h0EEE,12'd11); // halt (blank word decodes as Reset)
+        start;
+        k=0; while (dut.fsm!==3'd5 && k<80) begin @(posedge clk); #1; k=k+1; end
+        if (dut.fsm!==3'd5 || dut.hr_occupied!==1'b1) begin
+            $display("FAIL T33 setup: fsm=%0d hr_occupied=%b (expected S_HALT with hr occupied)",
+                     dut.fsm, dut.hr_occupied); errors=errors+1;
+        end else begin
+            insert_req=1; insert_target=12'd10;
+            seen=0;
+            for (k=0;k<40;k=k+1) begin @(posedge clk); #1;
+                if (insert_ack) insert_req=0;
+                if (timing_signals===16'h0EEE) seen=1;
+            end
+            if (seen && dut.error_flag===1'b0 && dut.stack_depth===16'd1 &&
+                dut.hr_state===12'd7 && dut.hr_ins===1'b1)
+                $display("PASS T33: S_HALT rescue with occupied hr spilled via S_PUSH (depth=1), handler ran");
+            else begin
+                $display("FAIL T33: landed=%0d error_flag=%b depth=%0d hr_state=%0d hr_ins=%b",
+                         seen, dut.error_flag, dut.stack_depth, dut.hr_state, dut.hr_ins);
+                errors=errors+1; end
+            insert_req=0;
+        end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);

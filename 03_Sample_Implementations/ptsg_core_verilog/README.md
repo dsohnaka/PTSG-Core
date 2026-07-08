@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot SN-overwrite HALT, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT, unpaired Base Set<->Loop HALT (BG and Q), Stay Start State register + queued-Base-Set self-loop, BG/Q Stay Set re-kick tick-gating/tsig-hold/counter-continuation). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot SN-overwrite HALT, FG-illegal Global HALT, S_HALT insertion rescue (both direct and S_PUSH-spill paths), stray/FG Prog End HALT, unpaired Base Set<->Loop HALT (BG and Q), Stay Start State register + queued-Base-Set self-loop incl. the scaled 2^28 jitter-free timing item, BG/Q Stay Set re-kick tick-gating/tsig-hold/counter-continuation). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T31, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T33, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -102,7 +102,7 @@ reference resolves them according to the contributor's documented leans:
 | C4-F10 Stay Set role (was Tie C4-T4) | clear/sync-only; the counter counts prescaler ticks On-Tick from Stay Set through the window (RH003/004/005 + A4 hoist RH011) |
 | C3-F22 Reset bands (PROVISIONAL) | FG/BG fire immediately, no tick-gate. **Open interpretation, flagged for architect review:** a BG Reset panics State Number to 0 but leaves the Stay window open — the §3.4b table only arms the stay counter for BG Reset and is silent on window state (RH014, conformance test T10). |
 | Queued Reset priority (architect ruling 2026-07-08) | A queued Reset is reserved independently of the shared Loop/Jump queue slot and wins with absolute priority at Stay-timeup — any queued Loop/Jump/insertion is discarded and Reset performs a fully destructive clear (RH015, conformance test T11). |
-| Stay Set band-split (Phase 6, PROVISIONAL) | FG re-kicks fresh (drives tsig, resets the stay counter, immediate). BG re-kicks an already-open window (holds tsig, resets the counter, but is now tick-gated — waits for the next prescaler tick, like FG Branch/Jump/Reset). Q re-kicks too (holds tsig, does NOT reset the counter — it simply continues On-Tick — and advances immediately, full clock). `window_open`/`prog_end_seen`/`queued_valid`/`base_pending`/`q_base_pending` re-arm identically in all three bands, matching the pre-Phase-6 behavior the table is silent on (RH026, conformance tests T30/T31). |
+| Stay Set band-split (Phase 6 + RH027 audit, PROVISIONAL) | FG opens a fresh window (drives tsig, resets the stay counter, immediate, writes Stay Start State, re-arms all window/queue/pairing state). BG re-kicks an already-open window with exactly what its §3.4b cells state and nothing more: holds tsig, resets the counter, tick-gated advance — window/queue/pairing state untouched (a dangling Base Set's pairing obligation persists across a re-kick). Q is a pure pass-through: holds tsig, counter continues On-Tick uninterrupted, immediate advance, **no side effects** — its firing semantics are still to be defined by the architect (CHANGES item C4); in particular it must NOT clear `queued_valid` (that would silently discard an SN reservation, contradicting C8) nor `q_base_pending` (that would erase the unpaired-Base-Set evidence). (RH026/RH027, conformance tests T30/T31.) |
 
 ## Error HALT / エラーHALT（C3-F23, C3-F24）
 

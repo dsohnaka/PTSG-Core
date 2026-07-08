@@ -219,6 +219,23 @@
 //                                          window_open/prog_end_seen/queued_valid/base_pending/
 //                                          q_base_pending re-arm identically in all three bands, matching
 //                                          pre-Phase-6 behavior (the table is silent on this point).
+// 027 2026-07-08       Claude Code   Fix : Retrospective audit of the whole 7-phase pass. RH026's Q/BG
+//                                          Stay Set branches over-implemented the §3.4b table: a Q Stay
+//                                          Set cleared prog_end_seen (flipping the rest of the Q scan
+//                                          back into BG mid-band) and queued_valid (silently DISCARDING a
+//                                          pending SN reservation — contradicting the very C8 discipline
+//                                          Phase 4d added) and q_base_pending (erasing the unpaired-Base-
+//                                          Set evidence T29 exists to catch). The table's Q/BG Notes
+//                                          cells are empty and the CHANGES handoff (C4) marks Q Stay Set
+//                                          firing semantics as still-to-be-defined, so: Q is now a pure
+//                                          pass-through (advance only), BG re-kick touches only what its
+//                                          cells state (stay counter reset + tick-gated advance), and the
+//                                          full fresh-window re-arm belongs to FG alone. New conformance
+//                                          items: T32 (scaled 2^28 self-loop timing, the CHANGES C6
+//                                          recommendation — 4 laps x Stay-8, jitter-free 40-clock spacing)
+//                                          and T33 (S_HALT insertion rescue with an occupied holding
+//                                          register — exercises the rescue's S_PUSH spill path, which
+//                                          T23 did not cover).
 //
 // ============================================================================
 
@@ -796,34 +813,35 @@ module ptsg_core #(
                                 //      already-open window -- HOLDS timing_signals (does not drive tsig),      //
                                 //      resets the stay counter same as FG, but is now tick-gated (waits for    //
                                 //      the next prescaler tick before advancing, like FG Branch/Jump/Reset).   //
-                                //      Q "re-kicks" too -- HOLDS timing_signals, but does NOT reset the stay   //
-                                //      counter (it simply continues On-Tick, uninterrupted), and advances      //
-                                //      immediately (full system clock, not tick-gated). window_open/           //
-                                //      prog_end_seen/queued_valid/base_pending/q_base_pending are re-armed     //
-                                //      the same way in all three bands (a Stay Set is definitionally a fresh   //
-                                //      re-arm of the window structure, regardless of what band it is scanned  //
-                                //      in) -- the table is silent on this and it matches the pre-Phase-6       //
-                                //      behavior, so it is kept as the documented lean.                         //
+                                //      Q -- HOLDS timing_signals, does NOT reset the stay counter (it simply   //
+                                //      continues On-Tick, uninterrupted), and advances immediately (full       //
+                                //      system clock, not tick-gated).                                          //
+                                //      (RH026's original note claimed the window/queue/pairing registers        //
+                                //      re-arm identically in all three bands; superseded by RH027 below.)      //
                                 // =============================================================================//
-                                if (in_queued_band) begin                    // Q: re-kick, counter NOT reset   //
-                                    window_open    <= 1'b1;                                                     //
-                                    prog_end_seen  <= 1'b0;                                                     //
-                                    queued_valid   <= 1'b0;                                                     //
-                                    base_pending   <= 1'b0;                                                     //
-                                    q_base_pending <= 1'b0;                                                     //
-                                    // stay_cnt intentionally untouched (Q: "Continue counting, no reset")      //
-                                    // timing_signals intentionally untouched (Q: Held)                         //
-                                    state_num      <= state_num + 1'b1;                                         //
+                                // RH027 (retrospective audit): the Q and BG branches are pared back to        //
+                                // exactly what the §3.4b table's cells state, no more. The first Phase-6      //
+                                // cut re-armed window_open/prog_end_seen/queued_valid/base_pending/           //
+                                // q_base_pending in all three bands; on review that over-implements the       //
+                                // table (its Q/BG Notes cells are empty) and, worse, a Q Stay Set clearing    //
+                                // queued_valid would silently DISCARD a pending SN reservation (contradicting //
+                                // the C8 discipline where such a discard is a HALT-worthy event) and clearing //
+                                // q_base_pending would erase the unpaired-Q-Base-Set evidence T29 exists to   //
+                                // catch. The CHANGES handoff (item C4) says a Q Stay Set is "registered       //
+                                // during the scan (semantics of its firing to be exercised in verification)"  //
+                                // — i.e. its firing semantics are genuinely UNDECIDED at the spec level — so  //
+                                // Q is now a minimal pass-through, awaiting the architect's definition.       //
+                                // A BG re-kick likewise leaves window/queue/pairing state untouched: the      //
+                                // window is already open, queued_valid is structurally 0 in BG, and a         //
+                                // dangling BG Base Set's pairing obligation persists across a re-kick         //
+                                // (base_addr is undisturbed, so a later BG Loop still pairs with it).         //
+                                if (in_queued_band) begin        // Q: pass-through — counter NOT reset, tsig  //
+                                    state_num      <= state_num + 1'b1;   // held, no window/queue side effects //
                                 end                                                                             //
-                                else if (window_open) begin       // BG: re-kick, counter reset, tick-gated     //
+                                else if (window_open) begin       // BG: re-kick — counter reset, tick-gated    //
                                     if (presc_tick) begin                                                       //
-                                        window_open    <= 1'b1;                                                 //
-                                        prog_end_seen  <= 1'b0;                                                 //
-                                        queued_valid   <= 1'b0;                                                 //
-                                        base_pending   <= 1'b0;                                                 //
-                                        q_base_pending <= 1'b0;                                                 //
-                                        stay_cnt       <= {(CNT_W+1){1'b0}};                                    //
-                                        state_num      <= state_num + 1'b1;                                     //
+                                        stay_cnt   <= {(CNT_W+1){1'b0}};                                        //
+                                        state_num  <= state_num + 1'b1;                                         //
                                     end                                                                         //
                                     // timing_signals intentionally untouched (BG: Held); no advance until      //
                                     // the next prescaler tick (BG: "Consumes one tick, waits for next")        //
