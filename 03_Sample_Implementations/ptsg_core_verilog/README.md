@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot last-write-wins). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T20, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T21, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default

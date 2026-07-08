@@ -67,6 +67,10 @@
 //    T20 — RH019: a queued Return with a deeper stacked context falls
 //         through to S_POP correctly (real push/pop round trip via the
 //         testbench's external-stack model).
+//    T21 — C3-F26 (Phase 3d): last-write-wins in the shared Q-band slot —
+//         a Loop queued first is unconditionally overwritten by a Branch
+//         queued second (SN-reservation-overwrite HALT is Phase-4 work,
+//         not tested here).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -718,6 +722,34 @@ module ptsg_core_conformance_tb;
             $display("FAIL T20: return-landed=%0d popped-context-restored=%0d (hr_state=%0d depth=%0d)",
                      seen, visits, dut.hr_state, dut.stack_depth);
             errors=errors+1; end
+
+        // ================================================================
+        // T21 — C3-F26 (last-write-wins half): a later Q-band reservation
+        //      unconditionally replaces an earlier one in the shared slot.
+        //      A Loop (target=5, would redirect to base_addr if it fired)
+        //      is queued first, then a Branch — the Branch must win purely
+        //      because it is the last write to the single shared register,
+        //      not because of any separate arbitration logic.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG: base := 2 (Loop would jump here if it won)
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_LOOP(16'h0005);         // Q: Loop queued first (target=5, does not
+                                                              // immediately exit -> would redirect to base_addr)
+        dut.ptsg_imem.g_sim.mem[5]=I_BRANCH(16'h0000,12'd3); // Q: Branch queued SECOND -> must overwrite Loop
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // Branch taken-target landing (proves Branch won)
+        condition=0;   // Branch taken when it fires
+        start;
+        seen=0;
+        for (k=0;k<300;k=k+1) begin @(posedge clk); #1;
+            if (timing_signals===16'h0888) begin seen=1; k=300; end end
+        if (seen) $display("PASS T21: later Q reservation (Branch) overwrote the earlier one (Loop)");
+        else begin $display("FAIL T21: never observed the Branch-won marker (0x0888) — last-write-wins broken?");
+            errors=errors+1; end
+        condition=0;
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);

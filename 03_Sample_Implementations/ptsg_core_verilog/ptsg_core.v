@@ -268,6 +268,26 @@ module ptsg_core #(
     // Loop/Jump for the one shared slot — it is reserved on a wholly separate
     // track (pending_reset below) and takes unconditional priority over
     // whatever this slot holds at Stay-timeup.
+    //
+    // C3-F26 / C8 (Phase 3, partial): as of Phase 3c, every internal
+    // sub-opcode with Q-band semantics (Loop, Jump, Branch, Call, Return)
+    // shares this one slot. Overwrite behavior is a plain register write —
+    // a later Q-scanned reservation always replaces an earlier one with no
+    // arbitration, which is last-write-wins BY CONSTRUCTION (there is only
+    // one register to write). This matches half of C3-F26. The other half —
+    // overwriting a queued *State-Number* reservation (Branch/Jump/Return/
+    // Call/Loop all resolve to a State-Number target) must be a runaway
+    // error, HALT + error flag, not a silent replace — is NOT implemented:
+    // it needs the S_HALT state and error-flag port that are Phase 4 work
+    // (Ch3 §3.4b C3-F24). TODO(Phase 4): detect a second SN-class
+    // reservation while queued_valid already holds an SN-class entry (i.e.
+    // any of the five above; queued_valid&&(queued_subop==SUB_LOOP||
+    // queued_subop==SUB_CALL||queued_subop==SUB_RETURN||queued_opcode==
+    // OP_JUMP||queued_opcode==OP_BRANCH) intercepted at the moment a NEW
+    // one of these tries to write the slot) and trap to S_HALT instead of
+    // overwriting. Until then this is a documented, intentional deviation —
+    // not a silent gap — tracked here and in Tie C3-T15 (nested
+    // multi-booking, a related open question the spec itself leaves Tied).
     reg               queued_valid;
     reg [7:0]         queued_subop;
     reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
