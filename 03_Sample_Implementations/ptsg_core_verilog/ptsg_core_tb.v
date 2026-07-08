@@ -12,6 +12,11 @@
 //    D — Sub-sequence Call + Return (auto-save / return-to-after) — also
 //        runs in the background band for the same reason (C3-F23)
 //    E — indirect Jump (Jump operand 0 + indirect-read bus)
+//    F — RH028 minimal bare Stays at PRESCALE=1 (Stay-1 = one clock like
+//        NOP; Stay-2 loop period exactly the written sum)
+//    G — RH028 windowed exactness at PRESCALE=1 (idiom-D duty = written
+//        5:5; a scan-overrun windowed Stay-1 fires at the earliest tick
+//        instead of running away)
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_tb;
@@ -29,6 +34,7 @@ module ptsg_core_tb;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, toggles=0, k; reg last_led;
     reg loop_matched, seen5, seen3;
+    integer t_prev, period, seenc;   // Test F/G (RH028) period measurement
 
     ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1),
                 .IMEM_VENDOR("SIM"), .INIT_FILE("")) dut (
@@ -130,6 +136,84 @@ module ptsg_core_tb;
             if (timing_signals===16'hBEEF) disable wE; end end
         if (timing_signals===16'hBEEF) $display("PASS E: indirect jump landed at 7");
         else begin $display("FAIL E: tsig=%h st=%0d",timing_signals,state_number); errors=errors+1; end
+
+        // ---------------- Test F: minimal bare Stays (RH028) ----------------
+        // At PRESCALE=1 every clock is a tick, so a Stay's execute clock always
+        // coincides with one — that tick must count, and for Stay-1 it IS the
+        // deadline: timeup happens on the execute clock itself, making bare
+        // Stay-1 consume exactly one clock like FG NOP. Loop period of
+        // NOP + Stay-1 + Jump must be exactly 3 clocks; with Stay-2, exactly 4.
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP (state 0; loop lives at 1-3)
+        dut.ptsg_imem.g_sim.mem[1]=32'h00010700;   // NOP, tsig=0x0001 (period marker)
+        dut.ptsg_imem.g_sim.mem[2]=32'h00020011;   // bare Stay-1, tsig=0x0002
+        dut.ptsg_imem.g_sim.mem[3]=32'h00040013;   // Jump 1, tsig=0x0004
+        @(posedge clk); rst=0;
+        t_prev=-1; period=0; seenc=0;
+        for (k=0;k<60 && seenc<5;k=k+1) begin @(posedge clk); #1;
+            if (state_number===12'd1) begin
+                if (t_prev!=-1) begin
+                    if (period==0) period=k-t_prev;
+                    else if ((k-t_prev)!=period) period=-1;
+                    seenc=seenc+1; end
+                t_prev=k; end end
+        if (period==3) $display("PASS F1: bare Stay-1 loop period = 3 (Stay-1 = one clock, like NOP)");
+        else begin $display("FAIL F1: period=%0d (expected exactly 3)", period); errors=errors+1; end
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;
+        dut.ptsg_imem.g_sim.mem[1]=32'h00010700;   // period marker
+        dut.ptsg_imem.g_sim.mem[2]=32'h00020021;   // bare Stay-2
+        dut.ptsg_imem.g_sim.mem[3]=32'h00040013;   // Jump 1
+        @(posedge clk); rst=0;
+        t_prev=-1; period=0; seenc=0;
+        for (k=0;k<60 && seenc<5;k=k+1) begin @(posedge clk); #1;
+            if (state_number===12'd1) begin
+                if (t_prev!=-1) begin
+                    if (period==0) period=k-t_prev;
+                    else if ((k-t_prev)!=period) period=-1;
+                    seenc=seenc+1; end
+                t_prev=k; end end
+        if (period==4) $display("PASS F2: bare Stay-2 loop period = 4 (exact written value)");
+        else begin $display("FAIL F2: period=%0d (expected exactly 4)", period); errors=errors+1; end
+
+        // ---------------- Test G: windowed exactness (RH028) ----------------
+        // G1: idiom-D duty at PRESCALE=1 must equal the written Stay value
+        // exactly — the FG Stay Set's coincident tick counts as tick #1 of the
+        // new window. G2: a windowed Stay-1 right after Stay Set, whose deadline
+        // passes during the 2-clock scan pipeline, must fire at the earliest
+        // S_WAIT tick instead of running away through a 2^13-count wrap.
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00010200;   // Stay Set (ON window), tsig=0x0001
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000700;   // BG NOP
+        dut.ptsg_imem.g_sim.mem[3]=32'h00010051;   // Stay-5 (ON)
+        dut.ptsg_imem.g_sim.mem[4]=32'h00000200;   // Stay Set (OFF window)
+        dut.ptsg_imem.g_sim.mem[5]=32'h00000600;   // Prog End
+        dut.ptsg_imem.g_sim.mem[6]=32'h00000013;   // queued Jump -> 1
+        dut.ptsg_imem.g_sim.mem[7]=32'h00000051;   // Stay-5 (OFF)
+        dut.ptsg_imem.g_sim.mem[8]=32'h00000700;   // (clear Test E leftovers on the scan path)
+        @(posedge clk); rst=0;
+        repeat (30) @(posedge clk);
+        while (timing_signals[0]!==1'b0) @(posedge clk);
+        while (timing_signals[0]!==1'b1) @(posedge clk);
+        t_prev=0; while (timing_signals[0]===1'b1) begin t_prev=t_prev+1; @(posedge clk); end
+        period=0; while (timing_signals[0]===1'b0 && period<50) begin period=period+1; @(posedge clk); end
+        if (t_prev==5 && period==5)
+            $display("PASS G1: idiom-D duty at PRESCALE=1 = 5:5 (written value, coincident tick counted)");
+        else begin $display("FAIL G1: duty %0d:%0d (expected 5:5)", t_prev, period); errors=errors+1; end
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000200;   // Stay Set
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000011;   // windowed Stay-1 (deadline passes mid-scan)
+        dut.ptsg_imem.g_sim.mem[3]=32'h01000700;   // resume marker tsig=0x0100
+        dut.ptsg_imem.g_sim.mem[4]=32'h01000043;   // Jump 4 halt
+        @(posedge clk); rst=0;
+        seenc=0;
+        for (k=0;k<40;k=k+1) begin @(posedge clk); #1;
+            if (timing_signals===16'h0100) begin seenc=1; k=40; end end
+        if (seenc) $display("PASS G2: windowed Stay-1 fired at earliest tick (no 2^13 runaway)");
+        else begin $display("FAIL G2: windowed Stay-1 never resumed (st=%0d, stay_cnt=%0d)",
+                            state_number, dut.stay_cnt); errors=errors+1; end
 
         if (errors==0) $display("\nALL TESTS PASSED");
         else            $display("\n%0d TEST(S) FAILED",errors);

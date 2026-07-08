@@ -113,6 +113,10 @@
 //    T33 — C3-F24/RH022: S_HALT insertion rescue with an OCCUPIED holding
 //         register takes the S_PUSH spill path (stack depth 1, hr := the
 //         halted address with hr_ins=1) — the path T23 did not cover.
+//    T34 — RH028: an over-constrained window (BG scan longer than the
+//         written Stay) fires timeup on the first S_WAIT tick instead of
+//         running away (the >= deadline test; PRESCALE=1 minimal-Stay
+//         exactness is covered by ptsg_core_tb.v Tests F/G).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -1154,6 +1158,34 @@ module ptsg_core_conformance_tb;
                 errors=errors+1; end
             insert_req=0;
         end
+
+        // ================================================================
+        // T34 — RH028: an over-constrained window (BG scan longer than the
+        //      written Stay, so the deadline tick passes during the scan)
+        //      fires timeup on the FIRST tick in S_WAIT — the earliest
+        //      realizable moment — instead of silently running away
+        //      through a 2^13-count wrap (the pre-RH028 == deadline test
+        //      could never match once the counter had passed target-1).
+        //      PRESCALE=5 here; the same mechanism protects the PRESCALE=1
+        //      minimal-Stay cases (covered in ptsg_core_tb.v Tests F/G).
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        for (k=2;k<=13;k=k+1) dut.ptsg_imem.g_sim.mem[k]=I_NOP(16'h0000); // 12 BG NOPs (2+ ticks)
+        dut.ptsg_imem.g_sim.mem[14]=I_STAY(16'h0001,12'd2);  // Stay-2: deadline long since passed
+        dut.ptsg_imem.g_sim.mem[15]=I_NOP(16'h0FEE);         // resume marker
+        dut.ptsg_imem.g_sim.mem[16]=I_JUMP(16'h0FEE,12'd16); // halt
+        start;
+        seen=0;
+        for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
+            if (timing_signals===16'h0FEE) begin seen=1; k=60; end end
+        if (seen && dut.error_flag===1'b0)
+            $display("PASS T34: over-constrained window fired timeup at the earliest S_WAIT tick (no runaway)");
+        else begin
+            $display("FAIL T34: resumed=%0d error_flag=%b stay_cnt=%0d — deadline overrun ran away?",
+                     seen, dut.error_flag, dut.stay_cnt);
+            errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);
