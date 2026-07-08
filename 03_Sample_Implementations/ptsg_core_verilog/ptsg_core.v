@@ -208,6 +208,17 @@
 //                                          whether that Loop exits this lap or loops back for another)
 //                                          HALTs at Stay-timeup if still 1 (checked after pending_reset,
 //                                          which still wins unconditionally).
+// 026 2026-07-08       Claude Code   Mod : Phase 6 (C4-F10/§3.4b, PROVISIONAL) — Stay Set is genuinely
+//                                          band-split for the first time (previously one unconditional
+//                                          body for every band). FG unchanged (drives tsig, resets the
+//                                          stay counter, immediate). BG now holds timing_signals (was
+//                                          incorrectly driving tsig) and is tick-gated (was advancing
+//                                          immediately) while still resetting the stay counter. Q now
+//                                          holds timing_signals and does NOT reset the stay counter (was
+//                                          incorrectly resetting it) while still advancing immediately.
+//                                          window_open/prog_end_seen/queued_valid/base_pending/
+//                                          q_base_pending re-arm identically in all three bands, matching
+//                                          pre-Phase-6 behavior (the table is silent on this point).
 //
 // ============================================================================
 
@@ -775,25 +786,60 @@ module ptsg_core #(
                                 // =============================================================================//
                             end
                             SUB_STAYSET: begin
-                                // Open the window; clear/arm the stay counter
-                                // (C4-T4 lean B: ticking happens only in S_WAIT).
-                                // Phase 5 (C3-F25, PROVISIONAL): a FOREGROUND Stay Set (window_open
-                                // reads 0 here -- this is a fresh window, not a re-arm of an
-                                // already-open one) writes its own address to Stay Start State,
-                                // valid only through this Stay cycle. BG/Q Stay Set (re-arming a
-                                // window already open, e.g. as a Call/Loop target) do not touch it,
-                                // per the §3.4b table (only the FG row mentions this feature).
-                                if (!window_open) begin
-                                    stay_start_state <= state_num;
-                                end
-                                window_open    <= 1'b1;
-                                prog_end_seen  <= 1'b0;
-                                queued_valid   <= 1'b0;
-                                base_pending   <= 1'b0;   // fresh window: no dangling Base Set (Phase 4e)
-                                q_base_pending <= 1'b0;   // fresh window: no dangling Q Base Set (Phase 5)
-                                stay_cnt       <= {(CNT_W+1){1'b0}};
-                                timing_signals <= tsig;   // held during the band
-                                state_num      <= state_num + 1'b1;
+                                // =============================================================================//
+                                // REVISION HISTORY 026 (Phase 6, C4-F10/§3.4b, PROVISIONAL)                   //
+                                // 2026-07-08 Claude Code  Mod : Stay Set is genuinely band-split for the       //
+                                //      first time (previously one unconditional body for every band). Per the //
+                                //      §3.4b table: FG "re-kicks" fresh -- drives its own tsig, resets the     //
+                                //      stay counter, advances immediately (Leading-edge exception), and        //
+                                //      writes Stay Start State (Phase 5, C3-F25). BG "re-kicks" an             //
+                                //      already-open window -- HOLDS timing_signals (does not drive tsig),      //
+                                //      resets the stay counter same as FG, but is now tick-gated (waits for    //
+                                //      the next prescaler tick before advancing, like FG Branch/Jump/Reset).   //
+                                //      Q "re-kicks" too -- HOLDS timing_signals, but does NOT reset the stay   //
+                                //      counter (it simply continues On-Tick, uninterrupted), and advances      //
+                                //      immediately (full system clock, not tick-gated). window_open/           //
+                                //      prog_end_seen/queued_valid/base_pending/q_base_pending are re-armed     //
+                                //      the same way in all three bands (a Stay Set is definitionally a fresh   //
+                                //      re-arm of the window structure, regardless of what band it is scanned  //
+                                //      in) -- the table is silent on this and it matches the pre-Phase-6       //
+                                //      behavior, so it is kept as the documented lean.                         //
+                                // =============================================================================//
+                                if (in_queued_band) begin                    // Q: re-kick, counter NOT reset   //
+                                    window_open    <= 1'b1;                                                     //
+                                    prog_end_seen  <= 1'b0;                                                     //
+                                    queued_valid   <= 1'b0;                                                     //
+                                    base_pending   <= 1'b0;                                                     //
+                                    q_base_pending <= 1'b0;                                                     //
+                                    // stay_cnt intentionally untouched (Q: "Continue counting, no reset")      //
+                                    // timing_signals intentionally untouched (Q: Held)                         //
+                                    state_num      <= state_num + 1'b1;                                         //
+                                end                                                                             //
+                                else if (window_open) begin       // BG: re-kick, counter reset, tick-gated     //
+                                    if (presc_tick) begin                                                       //
+                                        window_open    <= 1'b1;                                                 //
+                                        prog_end_seen  <= 1'b0;                                                 //
+                                        queued_valid   <= 1'b0;                                                 //
+                                        base_pending   <= 1'b0;                                                 //
+                                        q_base_pending <= 1'b0;                                                 //
+                                        stay_cnt       <= {(CNT_W+1){1'b0}};                                    //
+                                        state_num      <= state_num + 1'b1;                                     //
+                                    end                                                                         //
+                                    // timing_signals intentionally untouched (BG: Held); no advance until      //
+                                    // the next prescaler tick (BG: "Consumes one tick, waits for next")        //
+                                end                                                                             //
+                                else begin                        // FG: fresh window, immediate, drives tsig  //
+                                    stay_start_state <= state_num;   // C3-F25 (Phase 5): fresh window only     //
+                                    window_open      <= 1'b1;                                                   //
+                                    prog_end_seen    <= 1'b0;                                                   //
+                                    queued_valid     <= 1'b0;                                                   //
+                                    base_pending     <= 1'b0;                                                   //
+                                    q_base_pending   <= 1'b0;                                                   //
+                                    stay_cnt         <= {(CNT_W+1){1'b0}};                                      //
+                                    timing_signals   <= tsig;                                                   //
+                                    state_num        <= state_num + 1'b1;                                       //
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             SUB_RETURN: begin
                                 // =============================================================================//

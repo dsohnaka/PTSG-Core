@@ -100,6 +100,12 @@
 //    T29 — C3-F24 (Phase 5, Q half, PROVISIONAL): a queued Base Set with no
 //         Loop ever reserved to consume it HALTs at Stay-timeup (the
 //         Q-side mirror of T27, closing the cell Phase 4e deferred).
+//    T30 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a BG Stay Set re-kick
+//         holds timing_signals and is tick-gated (period = PRESCALE
+//         clocks through a BG re-kick <-> BG Jump loop).
+//    T31 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a Q Stay Set re-kick does
+//         NOT reset the stay counter -- it continues counting across the
+//         BG->Q boundary.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -994,6 +1000,68 @@ module ptsg_core_conformance_tb;
             $display("PASS T29: unpaired Q Base Set<->Loop -> HALT at Stay-timeup (C3-F24)");
         else begin
             $display("FAIL T29: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T30 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a BG Stay Set
+        //      "re-kick" (landing on a Stay Set while a window is already
+        //      open) holds timing_signals (never drives its own tsig) and
+        //      is tick-gated -- an s2<->s3 loop through it (s2 = BG Stay
+        //      Set re-kick, s3 = BG Jump back) has period exactly
+        //      PRESCALE clocks, not the 1-clock immediate advance every
+        //      other BG command uses.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0000);      // FG: opens the window
+        dut.ptsg_imem.g_sim.mem[2]=I_STAYSET(16'h0BBB);      // BG: re-kick (tick-gated; tsig held)
+        dut.ptsg_imem.g_sim.mem[3]=I_JUMP(16'h0000,12'd2);   // BG: jump back to s2 (immediate)
+        start;
+        seen=0; visits=0;   // seen: 0x0BBB ever observed (would mean tsig wrongly driven)
+        t_prev=-1; period=0;
+        for (k=0;k<200 && visits<4;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0BBB) seen=1;
+            if (state_number===12'd3) begin
+                if (t_prev!=-1) begin
+                    if (period==0)              period=k-t_prev;
+                    else if ((k-t_prev)!=period) period=-1;
+                    visits=visits+1;
+                end
+                t_prev=k;
+            end
+        end
+        if (!seen && period==PRESCALE)
+            $display("PASS T30: BG Stay Set re-kick tick-gated (period=%0d), tsig held", period);
+        else begin
+            $display("FAIL T30: tsig-driven=%0d period=%0d (expected %0d)", seen, period, PRESCALE);
+            errors=errors+1; end
+
+        // ================================================================
+        // T31 — C4-F10/§3.4b (Phase 6, PROVISIONAL): a Q Stay Set
+        //      "re-kick" does NOT reset the stay counter -- it continues
+        //      counting On-Tick, uninterrupted, across the BG->Q boundary.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0000);      // FG: arms the counter, opens the window
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG padding (x6): guarantees at least one
+        dut.ptsg_imem.g_sim.mem[3]=I_NOP(16'h0000);          // presc_tick elapses before the Q Stay Set,
+        dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0000);          // so stay_cnt is provably nonzero going in
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[7]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[8]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[9]=I_STAYSET(16'h0000);      // Q: re-kick -- must NOT reset stay_cnt
+        dut.ptsg_imem.g_sim.mem[10]=I_JUMP(16'h0000,12'd10); // Q/BG halt (self-loop)
+        start;
+        k=0; while (state_number!==12'd9 && k<50) begin @(posedge clk); #1; k=k+1; end
+        visits=dut.stay_cnt;   // pre-count, sampled right before the Q Stay Set executes
+        @(posedge clk); #1;    // the Q Stay Set executes on this clock
+        if (visits>0 && dut.stay_cnt>0)
+            $display("PASS T31: Q Stay Set re-kick did not reset stay_cnt (%0d -> %0d)", visits, dut.stay_cnt);
+        else begin
+            $display("FAIL T31: pre-count=%0d post-count=%0d (expected both > 0)", visits, dut.stay_cnt);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
