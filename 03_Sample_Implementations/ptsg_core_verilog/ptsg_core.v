@@ -133,6 +133,17 @@
 //                                          the S_RUN->S_IND transition (holds through the stall unchanged,
 //                                          since state_num — and so the tsig wire — does not move until
 //                                          resolution).
+// 017 2026-07-08       Claude Code   Mod : Phase 3a — the Q-band shared reservation slot is generalized to
+//                                          Branch (§3.4b Branch Q row), replacing the "behaves like BG"
+//                                          placeholder. Scan time captures queued_save_state (Branch's own
+//                                          address) and queued_target (taken-target); Condition is evaluated
+//                                          live at Stay-timeup. Not-taken and the operand-0 self-loop idiom
+//                                          (no auto-save, C2-F5) fold into resume_addr; the real taken case
+//                                          needs an explicit save_or_set (possibly an S_PUSH stall).
+// 018 2026-07-08       Claude Code   Mod : Phase 3b — Call is added to the same Q-band reservation slot.
+//                                          Unconditional (no Condition to evaluate, unlike Branch): fires as
+//                                          a plain save_or_set from the captured own-address/target the
+//                                          moment the reservation is checked at Stay-timeup.
 //
 // ============================================================================
 
@@ -625,14 +636,36 @@ module ptsg_core #(
                                 end
                             end
                             SUB_CALL: begin
-                                // Unconditional call: auto-save the call address
-                                // (Return restores saved+1, the return-to-after
-                                // convention C3-F12) then jump by the 12-bit
-                                // offset in the extended operand (D16-D31).
-                                save_or_set(state_num,
-                                            1'b0,
-                                            state_num + g_ext[ADDR_W-1:0],
-                                            1'b0);
+                                // =============================================================================//
+                                // REVISION HISTORY 018 (Phase 3b)                                              //
+                                // 2026-07-08 Claude Code  Mod : Call is band-templated per §3.4b. Q now        //
+                                //      genuinely reserves (queued_save_state = this Call's own address,        //
+                                //      queued_target = save_state + g_ext, the offset-16-D31 target) and       //
+                                //      fires unconditionally at Stay-timeup — Call has no Condition to         //
+                                //      evaluate, unlike Branch, so firing is a plain save_or_set the moment    //
+                                //      the reservation is checked. FG is §3.4b-illegal (C3-F23, HALT) but      //
+                                //      the HALT machinery is Phase-4 work, so FG still behaves like BG here    //
+                                //      (documented deviation, matching Branch's own pending FG-HALT gap).      //
+                                // =============================================================================//
+                                if (in_queued_band) begin                    // as Que command (after Prog End) //
+                                    queued_valid      <= 1'b1;                                                  //
+                                    queued_opcode     <= OP_GLOBAL;                                              //
+                                    queued_subop      <= SUB_CALL;                                               //
+                                    queued_save_state <= state_num;         // this Call's own address           //
+                                    queued_target      <= state_num + g_ext[ADDR_W-1:0];  // implicit zero-ext   //
+                                    state_num          <= state_num + 1'b1;               // scan on            //
+                                end                                                                             //
+                                else begin        // as background (and, pending Phase 4, foreground) command   //
+                                    // Unconditional call: auto-save the call address
+                                    // (Return restores saved+1, the return-to-after
+                                    // convention C3-F12) then jump by the 12-bit
+                                    // offset in the extended operand (D16-D31).
+                                    save_or_set(state_num,
+                                                1'b0,
+                                                state_num + g_ext[ADDR_W-1:0],
+                                                1'b0);
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             SUB_LOOP: begin
                                 if (in_queued_band) begin
@@ -869,6 +902,16 @@ module ptsg_core #(
                             if (queued_valid && (queued_opcode == OP_BRANCH) &&
                                 !condition &&
                                 (queued_target[ADDR_W-1:0] != queued_save_state)) begin
+                                save_or_set(queued_save_state, 1'b0,
+                                            queued_target[ADDR_W-1:0], 1'b0);
+                            end
+                            // RH018 (Phase 3b): a queued Call fires unconditionally
+                            // (no Condition to evaluate, unlike Branch) — plain
+                            // save_or_set from the captured own-address/target.
+                            // Same save_or_set mutual-exclusivity with a
+                            // simultaneously-pending insertion as Branch above.
+                            else if (queued_valid && (queued_subop == SUB_CALL) &&
+                                     (queued_opcode == OP_GLOBAL)) begin
                                 save_or_set(queued_save_state, 1'b0,
                                             queued_target[ADDR_W-1:0], 1'b0);
                             end

@@ -58,6 +58,9 @@
 //         with no auto-save (C2-F5).
 //    T17 — RH017: a queued Branch with operand 0 (self-loop idiom),
 //         taken, resumes at its own address with no auto-save.
+//    T18 — RH018 (Phase 3b): a queued (Q-band) Call, unconditional,
+//         auto-saves its own address and jumps to the target at
+//         Stay-timeup; a subsequent Return resumes at save_state+1.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -115,6 +118,7 @@ module ptsg_core_conformance_tb;
     function [31:0] I_BASESET; input [15:0] tsig; I_BASESET = {tsig, 16'h0100}; endfunction
     function [31:0] I_RETURN;  input [15:0] tsig; I_RETURN  = {tsig, 16'h0300}; endfunction
     function [31:0] I_LOOP;    input [15:0] tgt;  I_LOOP    = {tgt,  16'h0500}; endfunction
+    function [31:0] I_CALL;    input [15:0] off;  I_CALL    = {off,  16'h0400}; endfunction
     function [31:0] I_STAY;    input [15:0] tsig; input [11:0] n;
         I_STAY = {tsig, n, 4'h1}; endfunction
     function [31:0] I_JUMP;    input [15:0] tsig; input [11:0] a;
@@ -593,6 +597,35 @@ module ptsg_core_conformance_tb;
             $display("FAIL T17: landed=%0d hr_occupied=%b", seen, dut.hr_occupied);
             errors=errors+1; end
         condition=0;
+
+        // ================================================================
+        // T18 — RH018 (Phase 3b): a queued (Q-band) Call, unconditional,
+        //      auto-saves its own address and jumps to save_state+offset
+        //      at Stay-timeup; a subsequent Return correctly resumes at
+        //      save_state+1 (return-to-after, C3-F12).
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_CALL(16'd4);            // Q: Call, target = 4+4 = 8
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0555);          // Q-scan continues; also return-to-after landing
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // call-target landing marker
+        dut.ptsg_imem.g_sim.mem[9]=I_RETURN(16'h0AAA);       // verify auto-save via Return
+        start;
+        seen=0; visits=0;
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0888) seen=1;
+            if (seen && timing_signals===16'h0555) begin visits=1; k=300; end
+        end
+        if (seen && visits)
+            $display("PASS T18: Q Call auto-saved + jumped; Return resumed at save_state+1");
+        else begin
+            $display("FAIL T18: call-landed=%0d return-resumed=%0d", seen, visits);
+            errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
         else            $display("\n%0d CONFORMANCE TEST(S) FAILED", errors);
