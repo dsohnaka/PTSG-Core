@@ -87,6 +87,11 @@
 //         the Q band (stray/duplicate BG->Q boundary) HALTs.
 //    T25 — C3-F23/C3-F24 (Phase 4c): a foreground Prog End (previously a
 //         silent "blank shot" no-op) now HALTs.
+//    T26 — C3-F24 (Phase 4e) regression: a BG Base Set correctly paired
+//         with a BG Loop that exits before Prog End does NOT halt.
+//    T27 — C3-F24 (Phase 4e): a BG Base Set never paired with an exiting
+//         Loop HALTs at the Prog End that exposes it (BG side only; the
+//         Q-band half is deferred to Phase 5).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -771,10 +776,14 @@ module ptsg_core_conformance_tb;
         //      Branch's own address. (Superseded T21's old Phase 3d
         //      last-write-wins placeholder — see RH023.)
         // ================================================================
+        // (No Base Set here: Phase 4e's unpaired Base Set<->Loop check would
+        // otherwise HALT at the BG Prog End below for an unrelated reason
+        // before this SN-overwrite scenario is even reached — the queued
+        // Loop's target is a bare literal, not a real Base Set/Loop pair.)
         reset1;
         dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
         dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
-        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
         dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
         dut.ptsg_imem.g_sim.mem[4]=I_LOOP(16'h0005);         // Q: Loop queued first -> queued_valid 0->1
         dut.ptsg_imem.g_sim.mem[5]=I_BRANCH(16'h0000,12'd3); // Q: Branch queued SECOND, queued_valid
@@ -872,6 +881,54 @@ module ptsg_core_conformance_tb;
             $display("PASS T25: FG Prog End is illegal (C3-F23) -> HALT (state frozen at s1)");
         else begin
             $display("FAIL T25: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
+            errors=errors+1; end
+
+        // ================================================================
+        // T26 — C3-F24 (Phase 4e) regression: a BG Base Set correctly
+        //      paired with a BG Loop that DOES exit before Prog End does
+        //      NOT halt -- the legitimate, long-standing pattern (T6, the
+        //      counted-Loop example, etc.) must keep working.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG: base_pending <= 1
+        dut.ptsg_imem.g_sim.mem[3]=I_LOOP(16'h0003);         // BG: iterates 3x, exits -> base_pending <= 0
+        dut.ptsg_imem.g_sim.mem[4]=I_PROGEND(16'h0000);      // BG: base_pending==0 -> succeeds, opens Q band
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0BBB,12'd4);   // Q: Stay closes the window at timeup
+        start;
+        // Sample prog_end_seen across the run rather than at a fixed clock:
+        // Stay-timeup (well within 60 clocks at PRESCALE=5, N=4) legitimately
+        // clears it again as part of the ordinary window-close prologue, so
+        // "was 1 at some point, and error_flag never latched" is the real
+        // pass condition, not "is 1 right now".
+        seen=0;
+        for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
+            if (dut.prog_end_seen) seen=1;
+        end
+        if (seen && dut.error_flag===1'b0)
+            $display("PASS T26: paired BG Base Set/Loop reached Prog End without HALT");
+        else begin
+            $display("FAIL T26: prog_end_seen-observed=%0d fsm=%0d error_flag=%b",
+                     seen, dut.fsm, dut.error_flag);
+            errors=errors+1; end
+
+        // ================================================================
+        // T27 — C3-F24 (Phase 4e): a BG Base Set with NO Loop pairing it at
+        //      all before Prog End (an unpaired Base Set<->Loop across the
+        //      BG->Q boundary) HALTs at the Prog End that exposes it.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG: base_pending <= 1, never paired
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);      // BG: base_pending still 1 -> HALT
+        start;
+        repeat (30) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd3)
+            $display("PASS T27: unpaired BG Base Set<->Loop across the BG->Q boundary -> HALT (C3-F24)");
+        else begin
+            $display("FAIL T27: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");

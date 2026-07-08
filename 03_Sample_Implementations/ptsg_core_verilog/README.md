@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot SN-overwrite HALT, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot SN-overwrite HALT, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT, unpaired Base Set<->Loop HALT). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T25, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T27, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -111,9 +111,12 @@ Reset, Stay Set and NOP are legal as foreground (outside-a-window) Global
 commands — Base Set, Return, Sub-sequence Call, Loop and Prog End are
 window-only. This implementation detects the FG-illegal case for Base Set,
 Return, Call, Loop and Prog End, a stray/duplicate Prog End scanned while
-already in the Q band, and (C3-F26/C8) a second Q-band State-Number
-reservation (Loop/Jump/Branch/Call/Return) scanned while an earlier one is
-still pending — and enters a dedicated
+already in the Q band, (C3-F26/C8) a second Q-band State-Number reservation
+(Loop/Jump/Branch/Call/Return) scanned while an earlier one is still
+pending, and (C3-F24) a BG Base Set that a BG Loop never actually exits
+before the window reaches Prog End (the Q-band half of this last check —
+a queued Base Set whose Loop lies in the BG window — is deferred to Phase
+5, since Base Set has no defined Q semantics yet) — and enters a dedicated
 **`S_HALT`** state per **C3-F24**: State Number holds at the violating
 instruction, the registered `error_flag` output is raised, and the FSM
 stays there — the same capture a SignalTap trigger would want — until
@@ -129,9 +132,12 @@ window-only even when reached via an insertion.
 合法なのは Reset・Stay Set・NOP のみであり、Base Set・Return・サブシーケンスCall・
 Loop・Prog End はウィンドウ限定であると規定する。本実装は Base Set・Return・Call・
 Loop・Prog End についてFG違法条件を検出し、Q帯域内で既にProg Endを一度消費した後の
-迷子・重複Prog Endを検出し、さらに（C3-F26/C8）先に予約されたQ帯域 State Number
+迷子・重複Prog Endを検出し、（C3-F26/C8）先に予約されたQ帯域 State Number
 予約（Loop/Jump/Branch/Call/Return）がまだ発火していないうちに二つ目の予約が
-来た場合も検出したうえで、**C3-F24** に従って専用の
+来た場合を検出し、さらに（C3-F24）BG の Base Set が対応する BG Loop によって
+一度も抜けられないまま窓が Prog End に至った場合（この規則のQ帯域側——Loopが
+BG窓内にあるQueのBase Set——はBase SetにまだQ意味論が定義されていないため
+Phase 5へ送る）も検出したうえで、**C3-F24** に従って専用の
 **`S_HALT`** ステートに入る：State Numberは違反命令で保持され、レジスタ化された
 `error_flag` 出力が立ち、ハードウェアリセットか `insert_req` がコアを救出する
 までFSMはそこに留まる（挿入は `error_flag` をクリアし、通常の自動保存経路で
@@ -174,7 +180,10 @@ following are faithful to the canonical patterns but simplified:
   loop re-enters the Base Set state each iteration, Base Set is idempotent and
   does not spill the previous base to the external stack; nested-loop
   base-stacking is therefore not provided. (Branch / Call / Insertion auto-save
-  and external-stack nesting **are** implemented.)
+  and external-stack nesting **are** implemented.) A BG Base Set must be paired
+  with a BG Loop that actually exits before the window's Prog End, or it HALTs
+  (C3-F24, Phase 4e) — the Q-band half of this pairing rule is deferred to
+  Phase 5 along with Base Set's own Q semantics (C3-F25).
 - **Instruction memory** is the `ptsg_imem` wrapper with `EDGE="NEG"` (half-cycle
   read): from this posedge FSM's viewpoint it behaves like a combinational read,
   so the single-phase FSM needs no fetch stage. Foreground commands advance on

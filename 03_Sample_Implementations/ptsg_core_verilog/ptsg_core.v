@@ -183,6 +183,16 @@
 //                                          track always wins at Stay-timeup). T21's old last-write-wins
 //                                          scenario is superseded by this HALT (it was Phase 3d's own
 //                                          documented placeholder for exactly this gap).
+// 024 2026-07-08       Claude Code   Add : Phase 4e (BG side only, C3-F24) — a new base_pending tracker
+//                                          is set by a BG Base Set and cleared by a BG Loop's successful
+//                                          exit; if a BG Prog End (the first-shot band-crossing point) is
+//                                          reached while base_pending is still 1, the Base Set was never
+//                                          paired with an exiting Loop -> HALT. Cleared by Stay Set (fresh
+//                                          window) and by Reset (panic-clears the whole loop scaffold, all
+//                                          three bands). The Q-band half of C3-F24's pairing rule (a queued
+//                                          Base Set whose Loop lies in the BG window) is deferred to Phase
+//                                          5, since Base Set's Q semantics (C3-F25, Stay Start State) are
+//                                          not yet implemented.
 //
 // ============================================================================
 
@@ -303,6 +313,15 @@ module ptsg_core #(
     // Stay window / background-execution state -------------------------------
     reg               window_open;      // Set by Stay Set, cleared at Stay-timeup
     reg               prog_end_seen;    // Set by Prog End inside an open window
+
+    // Base Set<->Loop band-pairing tracker (Phase 4e, C3-F24, BG side only) --
+    // Set by a BG Base Set; cleared by a BG Loop's successful exit. If a BG
+    // Prog End is reached while this is still 1, the Base Set was never
+    // paired with an exiting Loop -- a runaway error, HALT. Cleared by Stay
+    // Set (fresh window). The Q-band half of this check (a queued Base Set
+    // whose Loop lies in the BG window) is deferred to Phase 5, since Base
+    // Set's Q semantics (C3-F25, Stay Start State) are not yet implemented.
+    reg               base_pending;
 
     // Single queued-operation slot (queued band, C3-T2 FIFO depth-1) ---------
     // RH015: Reset does NOT use this slot. Per architect ruling (2026-07-08),
@@ -536,6 +555,7 @@ module ptsg_core #(
             stack_depth     <= 16'd0;
             window_open     <= 1'b0;
             prog_end_seen   <= 1'b0;
+            base_pending    <= 1'b0;
             queued_valid    <= 1'b0;
             queued_subop    <= 8'd0;
             queued_opcode   <= OP_GLOBAL;  // RH014 hygiene: was never reset (X in sim);
@@ -657,6 +677,7 @@ module ptsg_core #(
                                     state_num      <= {ADDR_W{1'b0}};                                          //
                                     loop_cnt       <= {LOOP_W{1'b0}};                                          //
                                     base_addr      <= {ADDR_W{1'b0}};                                          //
+                                    base_pending   <= 1'b0;         // panic clears the loop scaffold too       //
                                     hr_occupied    <= 1'b0;                                                    //
                                     stack_depth    <= 16'd0;                                                   //
                                     stay_cnt       <= {(CNT_W+1){1'b0}};       // arm to 0, don't start (§3.4b) //
@@ -666,6 +687,7 @@ module ptsg_core #(
                                     state_num      <= {ADDR_W{1'b0}};                                          //
                                     loop_cnt       <= {LOOP_W{1'b0}};                                          //
                                     base_addr      <= {ADDR_W{1'b0}};                                          //
+                                    base_pending   <= 1'b0;                                                    //
                                     hr_occupied    <= 1'b0;                                                    //
                                     stack_depth    <= 16'd0;                                                   //
                                     timing_signals <= tsig;               // own field, not cleared (C7)       //
@@ -691,8 +713,10 @@ module ptsg_core #(
                                     // iteration). This reference keeps a single-level
                                     // base — nested-loop base-stacking (spilling the
                                     // previous base to the external stack) is omitted.
-                                    base_addr <= state_num;
-                                    state_num <= state_num + 1'b1;
+                                    base_addr    <= state_num;
+                                    base_pending <= 1'b1;   // Phase 4e: must be paired by a Loop exit
+                                                             // before the next BG Prog End, or HALT.
+                                    state_num    <= state_num + 1'b1;
                                 end
                                 else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
                                     halt;                                                                       //
@@ -705,6 +729,7 @@ module ptsg_core #(
                                 window_open    <= 1'b1;
                                 prog_end_seen  <= 1'b0;
                                 queued_valid   <= 1'b0;
+                                base_pending   <= 1'b0;   // fresh window: no dangling Base Set (Phase 4e)
                                 stay_cnt       <= {(CNT_W+1){1'b0}};
                                 timing_signals <= tsig;   // held during the band
                                 state_num      <= state_num + 1'b1;
@@ -822,6 +847,7 @@ module ptsg_core #(
                                     if (loop_exits(loop_cnt, g_ext[LOOP_W-1:0])) begin
                                         loop_cnt       <= {LOOP_W{1'b0}};
                                         loop_cnt_match <= 1'b1;
+                                        base_pending   <= 1'b0;   // Phase 4e: paired -- exited cleanly
                                         state_num      <= state_num + 1'b1;
                                     end else begin
                                         loop_cnt  <= loop_cnt + 1'b1;
@@ -840,14 +866,20 @@ module ptsg_core #(
                                 //      Q band (in_queued_band, i.e. a stray/duplicate BG->Q boundary) HALTs,   //
                                 //      and FG Prog End -- previously a silent "blank shot" advance with no     //
                                 //      window to close -- now HALTs too (C3-F23, window-only). BG (first shot, //
-                                //      opens the Q band) keeps its existing behavior.                          //
+                                //      opens the Q band) keeps its existing behavior, plus a third trap        //
+                                //      (Phase 4e, RH024): a BG Base Set whose Loop was never exited (C3-F24    //
+                                //      unpaired Base Set<->Loop) HALTs here too, at the band-crossing point.   //
                                 // =============================================================================//
                                 if (in_queued_band) begin                    // stray 2nd Prog End in Q band     //
                                     halt;                                                                       //
                                 end                                                                             //
                                 else if (window_open) begin       // as background command: opens the Q band    //
-                                    prog_end_seen <= 1'b1;                                                      //
-                                    state_num     <= state_num + 1'b1;                                          //
+                                    if (base_pending) begin       // unpaired Base Set<->Loop -> HALT           //
+                                        halt;                                                                   //
+                                    end else begin                                                             //
+                                        prog_end_seen <= 1'b1;                                                  //
+                                        state_num     <= state_num + 1'b1;                                      //
+                                    end                                                                         //
                                 end                                                                             //
                                 else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
                                     halt;                                                                       //
@@ -1023,6 +1055,7 @@ module ptsg_core #(
                             timing_signals  <= pending_reset_tsig;
                             loop_cnt        <= {LOOP_W{1'b0}};
                             base_addr       <= {ADDR_W{1'b0}};
+                            base_pending    <= 1'b0;
                             hr_state        <= {ADDR_W{1'b0}};
                             hr_loop         <= {LOOP_W{1'b0}};
                             hr_base         <= {ADDR_W{1'b0}};
