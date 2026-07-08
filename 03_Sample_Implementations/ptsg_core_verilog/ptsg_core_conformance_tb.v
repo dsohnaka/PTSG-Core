@@ -38,6 +38,9 @@
 //         panics State Number to 0 but leaves the Stay window open, per this
 //         implementation's reading of the §3.4b table's silence on window
 //         state for BG Reset. Flagged for architect review.
+//    T11 — Architect ruling 2026-07-08: a queued Reset takes absolute
+//         priority over anything else queued in the same window (a Jump
+//         queued before it is completely discarded; Reset always wins).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -368,6 +371,35 @@ module ptsg_core_conformance_tb;
         else begin
             $display("FAIL T10: st=%0d window_open=%b (expected st=0, window_open=1)",
                      state_number, dut.window_open);
+            errors=errors+1; end
+
+        // ================================================================
+        // T11 — architect ruling (2026-07-08): a queued Reset takes
+        //      ABSOLUTE PRIORITY over anything else queued in the same
+        //      window. Here a Jump is queued to s20 BEFORE the Reset is
+        //      queued; at Stay-timeup the Jump's effect must be entirely
+        //      discarded and Reset must win (SN=0, its own tsig driven).
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_JUMP(16'h0000,12'd20);  // Q: queued Jump (must be overridden)
+        dut.ptsg_imem.g_sim.mem[5]=I_RESET(16'h0FFF);        // Q: queued Reset (must win)
+        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[20]=I_NOP(16'hBAD0);         // reached only if the Jump won (FAIL)
+        start;
+        seen=0; visits=0;   // visits reused here as an "escaped to s20" flag
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0FFF && state_number===12'd0) seen=1;
+            if (timing_signals===16'hBAD0) visits=1;
+        end
+        if (seen && !visits)
+            $display("PASS T11: queued Reset overrode a simultaneously-queued Jump (Reset always wins)");
+        else begin
+            $display("FAIL T11: reset-won=%0d jump-escaped-to-s20=%0d", seen, visits);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");
