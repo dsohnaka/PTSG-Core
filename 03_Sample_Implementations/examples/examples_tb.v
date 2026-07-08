@@ -5,16 +5,16 @@ module examples_tb;
     wire [11:0] state_number; wire [15:0] timing_signals;
     wire ext_op_valid; wire [3:0] ext_op_subopcode; wire [7:0] ext_op_sub_operand;
     wire [15:0] ext_op_data;
-    wire stack_push_req, stack_pop_req; wire [36:0] stack_wdata;
-    reg  [36:0] stack_rdata=0; reg stack_ack=0;
+    wire stack_push_req, stack_pop_req; wire [40:0] stack_wdata;
+    reg  [40:0] stack_rdata=0; reg stack_ack=0;
     reg insert_req=0; reg [11:0] insert_target=0; wire insert_ack;
-    wire [11:0] loop_counter; wire loop_cnt_match;
+    wire [15:0] loop_counter; wire loop_cnt_match;
     wire [11:0] stay_counter; wire stay_cnt_match;
     wire [31:0] prescaler_counter; wire prescaler_match;
     wire indirect_req; wire [1:0] indirect_purpose;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, k, toggles;
-    reg lastled, seenF0, seen8;
+    reg lastled, seenF0, seen0002, seen8;
 
     // Clocked monitor: latch the canonical background external-register write the
     // moment it appears on the bus (ext_op_valid is a one-clock pulse).
@@ -26,7 +26,8 @@ module examples_tb;
             seen_extwr <= 1'b1;
     end
 
-    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1)) dut (
+    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1),
+                .IMEM_VENDOR("SIM"), .INIT_FILE("")) dut (
         .clk(clk), .rst(rst), .condition(condition),
         .state_number(state_number), .timing_signals(timing_signals),
         .ext_op_valid(ext_op_valid), .ext_op_subopcode(ext_op_subopcode),
@@ -42,11 +43,11 @@ module examples_tb;
     always #5 clk=~clk;
 
     integer j;
-    task clear_imem; begin for (j=0;j<32;j=j+1) dut.imem[j]=32'h00000000; end endtask
+    task clear_imem; begin for (j=0;j<32;j=j+1) dut.ptsg_imem.g_sim.mem[j]=32'h00000000; end endtask
     // Programs are short; clear_imem zeroes the rest. (The simulator may print a
     // harmless "not enough words" note because the files are shorter than IMEM.)
     task load; input [1023:0] f; begin
-        rst=1; @(posedge clk); clear_imem; $readmemh(f, dut.imem); @(posedge clk); rst=0;
+        rst=1; @(posedge clk); clear_imem; $readmemh(f, dut.ptsg_imem.g_sim.mem); @(posedge clk); rst=0;
     end endtask
 
     initial begin
@@ -68,13 +69,19 @@ module examples_tb;
         condition=0;
 
         // ---- sub_sequence_branching ----
+        // Call/Return run in the background band (window-only, C3-F23), which
+        // holds timing_signals (Held) — so the subroutine-body NOP's own tsig
+        // (0x00F0) is never driven. Verification checks state_number reaching
+        // the subroutine body directly, then the Stay that receives the
+        // return-to-after (which does drive its own tsig, regardless of band).
         load("examples/sub_sequence_branching.hex");
-        seenF0=0;
+        seenF0=0; seen0002=0;
         for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
-            if (timing_signals===16'h00F0) seenF0=1; end
-        // after the subroutine, control returns to the 0x0002 state
-        if (seenF0) $display("PASS sub_sequence: subroutine body executed and returned");
-        else begin $display("FAIL sub_sequence: subroutine never ran"); errors=errors+1; end
+            if (state_number===12'd6) seenF0=1;
+            if (seenF0 && timing_signals===16'h0002) seen0002=1; end
+        if (seenF0 && seen0002) $display("PASS sub_sequence: subroutine body executed and returned");
+        else begin $display("FAIL sub_sequence: subroutine-reached=%0d returned=%0d",seenF0,seen0002);
+            errors=errors+1; end
 
         // ---- multi_signal_timing ----
         load("examples/multi_signal_timing.hex");

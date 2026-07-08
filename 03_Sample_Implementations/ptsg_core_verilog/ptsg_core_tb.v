@@ -5,9 +5,12 @@
 // ----------------------------------------------------------------------------
 //  Exercises the canonical PTSG patterns against the reference implementation:
 //    A — LED blink loop (Stay + Jump)
-//    B — counted Loop (Base Set + Loop, up-count to a target, auto-clear)
+//    B — counted Loop (Base Set + Loop, up-count to a target, auto-clear) —
+//        runs in the background band inside a Stay window, since Base
+//        Set/Loop are window-only (C3-F23, Phase 4b HALTs them in FG)
 //    C — Branch wait-for-Condition (Branch operand 0 self-loop)
-//    D — Sub-sequence Call + Return (auto-save / return-to-after)
+//    D — Sub-sequence Call + Return (auto-save / return-to-after) — also
+//        runs in the background band for the same reason (C3-F23)
 //    E — indirect Jump (Jump operand 0 + indirect-read bus)
 // ============================================================================
 `timescale 1ns/1ps
@@ -16,17 +19,19 @@ module ptsg_core_tb;
     wire [11:0] state_number; wire [15:0] timing_signals;
     wire ext_op_valid; wire [3:0] ext_op_subopcode; wire [7:0] ext_op_sub_operand;
     wire [15:0] ext_op_data;
-    wire stack_push_req, stack_pop_req; wire [36:0] stack_wdata;
-    reg  [36:0] stack_rdata=0; reg stack_ack=0;
+    wire stack_push_req, stack_pop_req; wire [40:0] stack_wdata;
+    reg  [40:0] stack_rdata=0; reg stack_ack=0;
     reg insert_req=0; reg [11:0] insert_target=0; wire insert_ack;
-    wire [11:0] loop_counter; wire loop_cnt_match;
+    wire [15:0] loop_counter; wire loop_cnt_match;
     wire [11:0] stay_counter; wire stay_cnt_match;
     wire [31:0] prescaler_counter; wire prescaler_match;
     wire indirect_req; wire [1:0] indirect_purpose;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, toggles=0, k; reg last_led;
+    reg loop_matched, seen5, seen3;
 
-    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1)) dut (
+    ptsg_core #(.IMEM_DEPTH(32), .PRESCALE(1),
+                .IMEM_VENDOR("SIM"), .INIT_FILE("")) dut (
         .clk(clk), .rst(rst), .condition(condition),
         .state_number(state_number), .timing_signals(timing_signals),
         .ext_op_valid(ext_op_valid), .ext_op_subopcode(ext_op_subopcode),
@@ -49,9 +54,9 @@ module ptsg_core_tb;
     initial begin
         // ---------------- Test A: blink ----------------
         reset1;
-        dut.imem[0]=32'h00010700; dut.imem[1]=32'h00010021;   // NOP on ; Stay2 (hold on)
-        dut.imem[2]=32'h00000700; dut.imem[3]=32'h00000021;   // NOP off; Stay2 (hold off)
-        dut.imem[4]=32'h00000013;                             // Jump 1
+        dut.ptsg_imem.g_sim.mem[0]=32'h00010700; dut.ptsg_imem.g_sim.mem[1]=32'h00010021;   // NOP on ; Stay2 (hold on)
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000700; dut.ptsg_imem.g_sim.mem[3]=32'h00000021;   // NOP off; Stay2 (hold off)
+        dut.ptsg_imem.g_sim.mem[4]=32'h00000013;                             // Jump 1
         @(posedge clk); rst=0; #1; last_led=timing_signals[0];
         for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
             if (timing_signals[0]!==last_led) toggles=toggles+1; last_led=timing_signals[0]; end
@@ -59,23 +64,29 @@ module ptsg_core_tb;
         else begin $display("FAIL A: toggles=%0d",toggles); errors=errors+1; end
 
         // ---------------- Test B: counted Loop ----------------
+        // Base Set/Loop are window-only (C3-F23 FG-Global exclusion); this
+        // runs them in the background band, inside a Stay window opened by
+        // Stay Set. In-window commands hold timing_signals (Held, per
+        // §3.4b), so loop_cnt_match — not a tsig marker — is the correct
+        // signal to observe the loop's exit (C3-F18).
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00000100;   // Base Set
-        dut.imem[2]=32'h00000700;   // body NOP
-        dut.imem[3]=32'h00030500;   // Loop target=3 (D16-D31=3)
-        dut.imem[4]=32'hAAAA0700;   // exit marker tsig=0xAAAA
-        dut.imem[5]=32'h00000053;   // Jump 5 halt
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000200;   // Stay Set (opens the window)
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000100;   // Base Set (BG)
+        dut.ptsg_imem.g_sim.mem[3]=32'h00000700;   // body NOP (BG)
+        dut.ptsg_imem.g_sim.mem[4]=32'h00030500;   // Loop target=3 (BG; D16-D31=3)
+        dut.ptsg_imem.g_sim.mem[5]=32'h00000053;   // Jump 5 self (BG; stays inside the still-open window)
         @(posedge clk); rst=0;
-        begin: wB for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
-            if (timing_signals==16'hAAAA) disable wB; end end
-        if (timing_signals==16'hAAAA) $display("PASS B: loop exited, loop_counter=%0d",loop_counter);
+        loop_matched=0;
+        for (k=0;k<200;k=k+1) begin @(posedge clk); #1;
+            if (loop_cnt_match) loop_matched=1; end
+        if (loop_matched) $display("PASS B: loop exited, loop_counter=%0d",loop_counter);
         else begin $display("FAIL B: st=%0d",state_number); errors=errors+1; end
 
         // ---------------- Test C: Branch wait ----------------
         reset1;
-        dut.imem[0]=32'h00000002;   // Branch operand 0 (self-loop)
-        dut.imem[1]=32'h00FF0013;   // Jump 1 self, tsig=0x00FF held
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000002;   // Branch operand 0 (self-loop)
+        dut.ptsg_imem.g_sim.mem[1]=32'h00FF0013;   // Jump 1 self, tsig=0x00FF held
         @(posedge clk); rst=0; condition=0;
         repeat (5) @(posedge clk); #1;
         if (state_number!==12'd0) begin $display("FAIL C: not waiting (st=%0d)",state_number); errors=errors+1; end
@@ -85,26 +96,34 @@ module ptsg_core_tb;
         condition=0;
 
         // ---------------- Test D: Call + Return ----------------
+        // Call/Return are window-only (C3-F23); this runs them in the
+        // background band. Since BG Call/Return also hold timing_signals
+        // (not driven), verification checks state_number directly rather
+        // than a tsig marker.
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00030400;   // Call offset 3 -> 4 (save 1)
-        dut.imem[2]=32'h12340700;   // return-to-after lands here (tsig=0x1234)
-        dut.imem[3]=32'h00000033;   // Jump 3 halt
-        dut.imem[4]=32'h56780700;   // subroutine body (tsig=0x5678)
-        dut.imem[5]=32'h00000300;   // Return
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000200;   // Stay Set (opens the window)
+        dut.ptsg_imem.g_sim.mem[2]=32'h00030400;   // Call offset 3 -> 5 (save 2) (BG)
+        dut.ptsg_imem.g_sim.mem[3]=32'h00000700;   // return-to-after lands here (BG)
+        dut.ptsg_imem.g_sim.mem[4]=32'h00000043;   // Jump 4 self (BG; stays put after the return)
+        dut.ptsg_imem.g_sim.mem[5]=32'h00000700;   // subroutine body (BG)
+        dut.ptsg_imem.g_sim.mem[6]=32'h00000300;   // Return (BG)
         @(posedge clk); rst=0;
-        begin: wD for (k=0;k<50;k=k+1) begin @(posedge clk); #1;
-            if (timing_signals===16'h1234) disable wD; end end
-        if (timing_signals===16'h1234) $display("PASS D: call/return reached return-to-after (st=%0d)",state_number);
-        else begin $display("FAIL D: tsig=%h st=%0d",timing_signals,state_number); errors=errors+1; end
+        seen5=0; seen3=0;
+        for (k=0;k<50;k=k+1) begin @(posedge clk); #1;
+            if (state_number===12'd5) seen5=1;
+            if (seen5 && state_number===12'd3) seen3=1;
+        end
+        if (seen3) $display("PASS D: call/return reached return-to-after (st=%0d)",state_number);
+        else begin $display("FAIL D: seen5=%0d seen3=%0d st=%0d",seen5,seen3,state_number); errors=errors+1; end
 
         // ---------------- Test E: indirect Jump ----------------
         reset1;
-        dut.imem[0]=32'h00000700;   // NOP
-        dut.imem[1]=32'h00000003;   // Jump operand 0 => indirect
-        dut.imem[2]=32'h00000033;   // (skipped)
-        dut.imem[7]=32'hBEEF0700;   // target tsig=0xBEEF
-        dut.imem[8]=32'h00000083;   // Jump 8 halt
+        dut.ptsg_imem.g_sim.mem[0]=32'h00000700;   // NOP
+        dut.ptsg_imem.g_sim.mem[1]=32'h00000003;   // Jump operand 0 => indirect
+        dut.ptsg_imem.g_sim.mem[2]=32'h00000033;   // (skipped)
+        dut.ptsg_imem.g_sim.mem[7]=32'hBEEF0700;   // target tsig=0xBEEF
+        dut.ptsg_imem.g_sim.mem[8]=32'h00000083;   // Jump 8 halt
         indirect_data=12'd7;
         @(posedge clk); rst=0;
         begin: wE for (k=0;k<50;k=k+1) begin @(posedge clk); #1;
