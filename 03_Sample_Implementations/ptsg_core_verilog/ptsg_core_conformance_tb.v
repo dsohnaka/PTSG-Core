@@ -61,6 +61,12 @@
 //    T18 — RH018 (Phase 3b): a queued (Q-band) Call, unconditional,
 //         auto-saves its own address and jumps to the target at
 //         Stay-timeup; a subsequent Return resumes at save_state+1.
+//    T19 — RH019 (Phase 3c): a queued (Q-band) Return restores the held
+//         context at Stay-timeup, resuming at hr_state+1 — the shallow
+//         (stack_depth==0) case.
+//    T20 — RH019: a queued Return with a deeper stacked context falls
+//         through to S_POP correctly (real push/pop round trip via the
+//         testbench's external-stack model).
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -101,6 +107,29 @@ module ptsg_core_conformance_tb;
     // indirect_ready staying permanently 0 was silent until T13/T14, which
     // hung waiting for it — found while debugging this exact addition).
     always @(posedge clk) indirect_ready <= indirect_req;
+
+    // External-stack-memory responder (C5-F2 variable-clock style,
+    // simplified to a fixed 1-clock turnaround): needed by T20, a queued
+    // Return whose S_POP fallback exercises a real push/pop round trip.
+    reg [40:0] stk_mem [0:7];
+    reg [3:0]  stk_sp;
+    always @(posedge clk) begin
+        if (rst) begin
+            stack_ack <= 1'b0;
+            stk_sp    <= 4'd0;
+        end else begin
+            stack_ack <= 1'b0;
+            if (stack_push_req && !stack_ack) begin
+                stk_mem[stk_sp] <= stack_wdata;
+                stk_sp          <= stk_sp + 4'd1;
+                stack_ack       <= 1'b1;
+            end else if (stack_pop_req && !stack_ack) begin
+                stack_rdata <= stk_mem[stk_sp-4'd1];
+                stk_sp      <= stk_sp - 4'd1;
+                stack_ack   <= 1'b1;
+            end
+        end
+    end
 
     // ---- helpers -----------------------------------------------------------
     integer j;
@@ -625,6 +654,69 @@ module ptsg_core_conformance_tb;
             $display("PASS T18: Q Call auto-saved + jumped; Return resumed at save_state+1");
         else begin
             $display("FAIL T18: call-landed=%0d return-resumed=%0d", seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T19 — RH019 (Phase 3c): a queued (Q-band) Return restores the
+        //      held context at Stay-timeup, resuming at hr_state+1
+        //      (return-to-after, C3-F12) — the shallow (stack_depth==0)
+        //      case.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_CALL(16'd3);            // FG Call; own addr=1, target=1+3=4
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0222);          // return-to-after landing (hr_state+1=2)
+        dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0444);          // call-target landing (subroutine body)
+        dut.ptsg_imem.g_sim.mem[5]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[7]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[8]=I_RETURN(16'h0000);       // Q: Return
+        dut.ptsg_imem.g_sim.mem[9]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        start;
+        seen=0; visits=0;
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0444) seen=1;
+            if (seen && timing_signals===16'h0222) begin visits=1; k=300; end
+        end
+        if (seen && visits)
+            $display("PASS T19: Q Return restored context at Stay-timeup, resumed at hr_state+1");
+        else begin
+            $display("FAIL T19: call-landed=%0d return-resumed=%0d", seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T20 — RH019 (Phase 3c): a queued (Q-band) Return with a DEEPER
+        //      stacked context (stack_depth != 0) correctly falls through
+        //      to S_POP after restoring the immediate holding-register
+        //      context — verified end-to-end via a real push/pop round
+        //      trip through the testbench's external-stack model.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_CALL(16'd2);            // FG Call#1; own=1, target=1+2=3; hr_state<=1
+        dut.ptsg_imem.g_sim.mem[3]=I_CALL(16'd2);            // FG Call#2; own=3, target=3+2=5;
+                                                              // hr_occupied already 1 -> implicit push
+                                                              // (spills {hr_state=1,...}), then hr_state<=3
+        dut.ptsg_imem.g_sim.mem[5]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[7]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[8]=I_RETURN(16'h0000);       // Q: Return #1 -> resumes at hr_state(3)+1=4;
+                                                              // stack_depth==1 -> falls through to S_POP
+        dut.ptsg_imem.g_sim.mem[9]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0DDD);          // return-to-after landing for Return #1
+        start;
+        seen=0; visits=0;
+        for (k=0;k<400;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0DDD) seen=1;
+            if (seen && dut.hr_state===12'd1 && dut.stack_depth===16'd0) begin visits=1; k=400; end
+        end
+        if (seen && visits)
+            $display("PASS T20: Q Return with a deeper stacked context fell through to S_POP correctly");
+        else begin
+            $display("FAIL T20: return-landed=%0d popped-context-restored=%0d (hr_state=%0d depth=%0d)",
+                     seen, visits, dut.hr_state, dut.stack_depth);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");

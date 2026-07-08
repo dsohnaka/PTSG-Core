@@ -144,6 +144,11 @@
 //                                          Unconditional (no Condition to evaluate, unlike Branch): fires as
 //                                          a plain save_or_set from the captured own-address/target the
 //                                          moment the reservation is checked at Stay-timeup.
+// 019 2026-07-08       Claude Code   Mod : Phase 3c — Return is added to the same Q-band reservation slot.
+//                                          Needs no extra scan-time capture (hr_state/hr_loop/hr_base/hr_ins/
+//                                          stack_depth are live registers, read at firing); fires by restoring
+//                                          them at Stay-timeup, including the S_POP fallback for a deeper
+//                                          stacked context.
 //
 // ============================================================================
 
@@ -623,17 +628,37 @@ module ptsg_core #(
                                 state_num      <= state_num + 1'b1;
                             end
                             SUB_RETURN: begin
-                                // Restore the held context.
-                                state_num <= hr_ins ? hr_state : (hr_state + 1'b1);
-                                loop_cnt  <= hr_loop;
-                                base_addr <= hr_base;
-                                if (stack_depth != 16'd0) begin
-                                    // A deeper context is on the external stack.
-                                    stack_pop_req <= 1'b1;
-                                    fsm           <= S_POP;
-                                end else begin
-                                    hr_occupied <= 1'b0;
-                                end
+                                // =============================================================================//
+                                // REVISION HISTORY 019 (Phase 3c)                                              //
+                                // 2026-07-08 Claude Code  Mod : Return is band-templated per §3.4b. Q now      //
+                                //      genuinely reserves and fires at Stay-timeup; no extra capture is        //
+                                //      needed (hr_state/hr_loop/hr_base/hr_ins/stack_depth are live registers, //
+                                //      read at firing, not at scan time — nothing else in a Q band can touch   //
+                                //      them between the Return's reservation and the window's own timeup).     //
+                                //      FG is §3.4b-illegal (C3-F23, HALT) but the HALT machinery is Phase-4    //
+                                //      work, so FG still behaves like BG here (documented deviation, matching  //
+                                //      Branch's and Call's own pending FG-HALT gap).                           //
+                                // =============================================================================//
+                                if (in_queued_band) begin                    // as Que command (after Prog End) //
+                                    queued_valid  <= 1'b1;                                                      //
+                                    queued_opcode <= OP_GLOBAL;                                                  //
+                                    queued_subop  <= SUB_RETURN;                                                 //
+                                    state_num     <= state_num + 1'b1;                    // scan on            //
+                                end                                                                             //
+                                else begin        // as background (and, pending Phase 4, foreground) command   //
+                                    // Restore the held context.
+                                    state_num <= hr_ins ? hr_state : (hr_state + 1'b1);
+                                    loop_cnt  <= hr_loop;
+                                    base_addr <= hr_base;
+                                    if (stack_depth != 16'd0) begin
+                                        // A deeper context is on the external stack.
+                                        stack_pop_req <= 1'b1;
+                                        fsm           <= S_POP;
+                                    end else begin
+                                        hr_occupied <= 1'b0;
+                                    end
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             SUB_CALL: begin
                                 // =============================================================================//
@@ -914,6 +939,25 @@ module ptsg_core #(
                                      (queued_opcode == OP_GLOBAL)) begin
                                 save_or_set(queued_save_state, 1'b0,
                                             queued_target[ADDR_W-1:0], 1'b0);
+                            end
+                            // RH019 (Phase 3c): a queued Return fires by restoring
+                            // the (live) holding-register context, same as the BG
+                            // path — including the S_POP fallback when a deeper
+                            // context is on the external stack, which overrides the
+                            // fsm<=S_RUN set above (same override pattern save_or_set
+                            // already uses for S_PUSH). Mutually exclusive with a
+                            // simultaneously-pending insertion, same deferral style.
+                            else if (queued_valid && (queued_subop == SUB_RETURN) &&
+                                     (queued_opcode == OP_GLOBAL)) begin
+                                state_num <= hr_ins ? hr_state : (hr_state + 1'b1);
+                                loop_cnt  <= hr_loop;
+                                base_addr <= hr_base;
+                                if (stack_depth != 16'd0) begin
+                                    stack_pop_req <= 1'b1;
+                                    fsm           <= S_POP;
+                                end else begin
+                                    hr_occupied <= 1'b0;
+                                end
                             end
                             // Deferred insertion (C3-F20). An occupied holding
                             // register spills to the external stack (implicit
