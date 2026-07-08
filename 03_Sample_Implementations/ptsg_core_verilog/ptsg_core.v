@@ -171,6 +171,18 @@
 //                                          actually exercises an S_HALT rescue (T22/T23 below had none
 //                                          before). Now sets fsm <= S_RUN explicitly (overridden by
 //                                          save_or_set's own S_PUSH assignment when hr_occupied).
+// 023 2026-07-08       Claude Code   Mod : Phase 4d — closes the C3-F26/C8 TODO Phase 3c/3d left open:
+//                                          each of the five Q-band SN-reservation sites (Loop, Jump,
+//                                          Branch, Call, Return) now HALTs (C3-F24) instead of silently
+//                                          overwriting when queued_valid is already 1, i.e. a second SN
+//                                          reservation is scanned in the same Q band before the first
+//                                          ever fires. "Last-write-wins" is what the FIRST (0->1)
+//                                          reservation in a fresh window's Q band describes, not a
+//                                          license to clobber a pending one. Reset is unaffected (it
+//                                          never touches queued_valid at scan time; its own independent
+//                                          track always wins at Stay-timeup). T21's old last-write-wins
+//                                          scenario is superseded by this HALT (it was Phase 3d's own
+//                                          documented placeholder for exactly this gap).
 //
 // ============================================================================
 
@@ -299,25 +311,22 @@ module ptsg_core #(
     // track (pending_reset below) and takes unconditional priority over
     // whatever this slot holds at Stay-timeup.
     //
-    // C3-F26 / C8 (Phase 3, partial): as of Phase 3c, every internal
-    // sub-opcode with Q-band semantics (Loop, Jump, Branch, Call, Return)
-    // shares this one slot. Overwrite behavior is a plain register write —
-    // a later Q-scanned reservation always replaces an earlier one with no
-    // arbitration, which is last-write-wins BY CONSTRUCTION (there is only
-    // one register to write). This matches half of C3-F26. The other half —
-    // overwriting a queued *State-Number* reservation (Branch/Jump/Return/
-    // Call/Loop all resolve to a State-Number target) must be a runaway
-    // error, HALT + error flag, not a silent replace — is NOT implemented:
-    // it needs the S_HALT state and error-flag port that are Phase 4 work
-    // (Ch3 §3.4b C3-F24). TODO(Phase 4): detect a second SN-class
-    // reservation while queued_valid already holds an SN-class entry (i.e.
-    // any of the five above; queued_valid&&(queued_subop==SUB_LOOP||
-    // queued_subop==SUB_CALL||queued_subop==SUB_RETURN||queued_opcode==
-    // OP_JUMP||queued_opcode==OP_BRANCH) intercepted at the moment a NEW
-    // one of these tries to write the slot) and trap to S_HALT instead of
-    // overwriting. Until then this is a documented, intentional deviation —
-    // not a silent gap — tracked here and in Tie C3-T15 (nested
-    // multi-booking, a related open question the spec itself leaves Tied).
+    // C3-F26 / C8: every internal sub-opcode with Q-band semantics (Loop,
+    // Jump, Branch, Call, Return) shares this one slot. Because queued_valid
+    // is set to 1 by exactly these five reservation sites and by nothing
+    // else while a window is open, "queued_valid already 1" IS "an SN-class
+    // reservation is already pending" — so each of the five now guards its
+    // own write: if queued_valid is already 1, a second SN reservation in
+    // the same Q band is a runaway error, HALT + error flag (C3-F24), not a
+    // silent replace (Phase 4d, RH023, closes the TODO Phase 3c/3d left
+    // here). The FIRST reservation in a fresh window's Q band always
+    // succeeds (queued_valid starts at 0, cleared by Stay Set) — that
+    // initial 0->1 write is what "last-write-wins" actually describes now:
+    // there is nothing earlier to overwrite yet. Reset does NOT participate
+    // in any of this — it never touches queued_valid at scan time; its own
+    // track always wins at Stay-timeup regardless of what this slot holds.
+    // Related open question the spec itself leaves Tied: Tie C3-T15 (nested
+    // multi-booking — two Base Sets and two Loops in one window).
     reg               queued_valid;
     reg [7:0]         queued_subop;
     reg [3:0]         queued_opcode;    // Add: Opcode for Foreground commands can also be queued. - RH 007 Arch. Ohnaka (2026-06-15 21:07)
@@ -709,13 +718,18 @@ module ptsg_core #(
                                 //      read at firing, not at scan time — nothing else in a Q band can touch   //
                                 //      them between the Return's reservation and the window's own timeup).     //
                                 //      FG is §3.4b-illegal (C3-F23) -> runaway error, HALT (C3-F24) — Phase 4b //
-                                //      closes the gap Phase 3c left open.                                       //
+                                //      closes the gap Phase 3c left open. Phase 4d: overwriting an already-   //
+                                //      pending SN reservation is itself a runaway error (C3-F26/C8) -> HALT.  //
                                 // =============================================================================//
                                 if (in_queued_band) begin                    // as Que command (after Prog End) //
-                                    queued_valid  <= 1'b1;                                                      //
-                                    queued_opcode <= OP_GLOBAL;                                                  //
-                                    queued_subop  <= SUB_RETURN;                                                 //
-                                    state_num     <= state_num + 1'b1;                    // scan on            //
+                                    if (queued_valid) begin      // SN-overwrite (C3-F26/C8) -> HALT           //
+                                        halt;                                                                   //
+                                    end else begin                                                             //
+                                        queued_valid  <= 1'b1;                                                  //
+                                        queued_opcode <= OP_GLOBAL;                                              //
+                                        queued_subop  <= SUB_RETURN;                                             //
+                                        state_num     <= state_num + 1'b1;                // scan on            //
+                                    end                                                                         //
                                 end                                                                             //
                                 else if (window_open) begin       // as background command (inside Stay window) //
                                     // Restore the held context.
@@ -745,14 +759,20 @@ module ptsg_core #(
                                 //      evaluate, unlike Branch, so firing is a plain save_or_set the moment    //
                                 //      the reservation is checked. FG is §3.4b-illegal (C3-F23) -> runaway     //
                                 //      error, HALT (C3-F24) — Phase 4b closes the gap Phase 3b left open.      //
+                                //      Phase 4d: overwriting an already-pending SN reservation is itself a     //
+                                //      runaway error (C3-F26/C8) -> HALT.                                      //
                                 // =============================================================================//
                                 if (in_queued_band) begin                    // as Que command (after Prog End) //
-                                    queued_valid      <= 1'b1;                                                  //
-                                    queued_opcode     <= OP_GLOBAL;                                              //
-                                    queued_subop      <= SUB_CALL;                                               //
-                                    queued_save_state <= state_num;         // this Call's own address           //
-                                    queued_target      <= state_num + g_ext[ADDR_W-1:0];  // implicit zero-ext   //
-                                    state_num          <= state_num + 1'b1;               // scan on            //
+                                    if (queued_valid) begin      // SN-overwrite (C3-F26/C8) -> HALT           //
+                                        halt;                                                                   //
+                                    end else begin                                                             //
+                                        queued_valid      <= 1'b1;                                              //
+                                        queued_opcode     <= OP_GLOBAL;                                          //
+                                        queued_subop      <= SUB_CALL;                                           //
+                                        queued_save_state <= state_num;     // this Call's own address           //
+                                        queued_target      <= state_num + g_ext[ADDR_W-1:0]; // implicit zero-ext //
+                                        state_num          <= state_num + 1'b1;           // scan on            //
+                                    end                                                                         //
                                 end                                                                             //
                                 else if (window_open) begin       // as background command (inside Stay window) //
                                     // Unconditional call: auto-save the call address
@@ -785,11 +805,17 @@ module ptsg_core #(
                                     // check in S_WAIT can never alias a queued Loop, and
                                     // so a queued Loop that exits can never alias a stale
                                     // queued_opcode==OP_JUMP in resume_addr.
-                                    queued_valid  <= 1'b1;
-                                    queued_subop  <= SUB_LOOP;
-                                    queued_opcode <= OP_GLOBAL;
-                                    queued_target <= g_ext[LOOP_W-1:0];
-                                    state_num     <= state_num + 1'b1;
+                                    // Phase 4d: overwriting an already-pending SN reservation
+                                    // is itself a runaway error (C3-F26/C8) -> HALT.
+                                    if (queued_valid) begin
+                                        halt;
+                                    end else begin
+                                        queued_valid  <= 1'b1;
+                                        queued_subop  <= SUB_LOOP;
+                                        queued_opcode <= OP_GLOBAL;
+                                        queued_target <= g_ext[LOOP_W-1:0];
+                                        state_num     <= state_num + 1'b1;
+                                    end
                                 end else if (window_open) begin
                                     // Immediate background Loop (literal target;
                                     // indirect target handled via S_IND above).
@@ -893,14 +919,20 @@ module ptsg_core #(
                         //      the taken-target (queued_target = save_state + operand — operand 0       //
                         //      naturally falls out as target == save_state, the self-loop idiom).       //
                         //      Condition is evaluated live at firing (S_WAIT), not captured here.       //
+                        // 2026-07-08 Claude Code  Mod : Phase 4d — overwriting an already-pending SN    //
+                        //      reservation is itself a runaway error (C3-F26/C8) -> HALT.               //
                         // =============================================================================//
                         if (in_queued_band) begin                    // as Que command (after Prog End) //
-                            queued_valid      <= 1'b1;                                                  //
-                            queued_opcode     <= OP_BRANCH;                                              //
-                            queued_subop      <= SUB_NOP;        // sentinel; disambiguated by opcode    //
-                            queued_save_state <= state_num;      // this Branch's own address            //
-                            queued_target     <= state_num + operand;  // taken-target (implicit zero-ext)//
-                            state_num         <= state_num + 1'b1;     // scan on                        //
+                            if (queued_valid) begin      // SN-overwrite (C3-F26/C8) -> HALT             //
+                                halt;                                                                    //
+                            end else begin                                                              //
+                                queued_valid      <= 1'b1;                                              //
+                                queued_opcode     <= OP_BRANCH;                                          //
+                                queued_subop      <= SUB_NOP;    // sentinel; disambiguated by opcode    //
+                                queued_save_state <= state_num;  // this Branch's own address            //
+                                queued_target     <= state_num + operand; // taken-target (implicit 0-ext)//
+                                state_num         <= state_num + 1'b1; // scan on                        //
+                            end                                                                          //
                         end                                                                             //
                         else if (window_open) begin       // as background command (inside Stay window) //
                             branch_decide;                     // tsig held; full-clock decision        //
@@ -922,14 +954,20 @@ module ptsg_core #(
                         // REVISION HISTORY  006                                                        //
                         // 2026-06-15  Arch. Ohnaka  Add :This defines the execution of JUMP            //
                         //      as a Que command, background command, and foreground command.           //
+                        // 2026-07-08  Claude Code   Mod : Phase 4d — overwriting an already-pending SN  //
+                        //      reservation is itself a runaway error (C3-F26/C8) -> HALT.               //
                         // =============================================================================//
                         if (in_queued_band) begin  // After Prog End inside Stay window: queue a Jump   // (immediate target).
-                            queued_valid  <= 1'b1;                                                      //
-                            queued_opcode <= OP_JUMP;                                                   //
-                            queued_subop  <= SUB_NOP;   // RH014: non-SUB_RESET sentinel — see Loop Q   //
-                            queued_target <= operand;                                                   //
-                            state_num     <= state_num + 1'b1;                                          //
-                        end                                                                             //    
+                            if (queued_valid) begin      // SN-overwrite (C3-F26/C8) -> HALT             //
+                                halt;                                                                    //
+                            end else begin                                                              //
+                                queued_valid  <= 1'b1;                                                  //
+                                queued_opcode <= OP_JUMP;                                                //
+                                queued_subop  <= SUB_NOP; // RH014: non-SUB_RESET sentinel — see Loop Q  //
+                                queued_target <= operand;                                                //
+                                state_num     <= state_num + 1'b1;                                       //
+                            end                                                                          //
+                        end                                                                             //
                         else if (window_open) begin  // Inside Stay window: treat as background command // (immediate target).
                             state_num      <= operand;  // Advance to the target immediately,           // but do NOT present tsig (C3-T1 B). 
                         end                                                                             //

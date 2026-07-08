@@ -70,10 +70,11 @@
 //    T20 — RH019: a queued Return with a deeper stacked context falls
 //         through to S_POP correctly (real push/pop round trip via the
 //         testbench's external-stack model).
-//    T21 — C3-F26 (Phase 3d): last-write-wins in the shared Q-band slot —
-//         a Loop queued first is unconditionally overwritten by a Branch
-//         queued second (SN-reservation-overwrite HALT is Phase-4 work,
-//         not tested here).
+//    T21 — C3-F26/C8 (Phase 4d, RH023): a second Q-band SN reservation
+//         scanned while the shared slot already holds a pending one HALTs
+//         (a Loop queued first, then a Branch queued second before the
+//         Loop ever fires) — supersedes Phase 3d's last-write-wins
+//         placeholder for this exact scenario.
 //    T22 — C3-F23/C3-F24 (Phase 4b): a foreground-illegal Global command
 //         (Base Set, representative of Base Set/Return/Call/Loop) HALTs —
 //         error_flag raises and State Number freezes at the violator.
@@ -760,30 +761,30 @@ module ptsg_core_conformance_tb;
             errors=errors+1; end
 
         // ================================================================
-        // T21 — C3-F26 (last-write-wins half): a later Q-band reservation
-        //      unconditionally replaces an earlier one in the shared slot.
-        //      A Loop (target=5, would redirect to base_addr if it fired)
-        //      is queued first, then a Branch — the Branch must win purely
-        //      because it is the last write to the single shared register,
-        //      not because of any separate arbitration logic.
+        // T21 — C3-F26/C8 (Phase 4d, RH023): a SECOND Q-band SN reservation
+        //      scanned while the shared slot already holds a pending one is
+        //      a runaway error, not a silent overwrite. A Loop is queued
+        //      first (queued_valid: 0->1, the legitimate "last-write-wins"
+        //      case — nothing earlier to clobber), then a Branch is queued
+        //      second while queued_valid is still 1 (the first Loop hasn't
+        //      fired yet, Stay-timeup hasn't arrived) -> HALT at the
+        //      Branch's own address. (Superseded T21's old Phase 3d
+        //      last-write-wins placeholder — see RH023.)
         // ================================================================
         reset1;
         dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
         dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
-        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG: base := 2 (Loop would jump here if it won)
+        dut.ptsg_imem.g_sim.mem[2]=I_BASESET(16'h0000);      // BG
         dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
-        dut.ptsg_imem.g_sim.mem[4]=I_LOOP(16'h0005);         // Q: Loop queued first (target=5, does not
-                                                              // immediately exit -> would redirect to base_addr)
-        dut.ptsg_imem.g_sim.mem[5]=I_BRANCH(16'h0000,12'd3); // Q: Branch queued SECOND -> must overwrite Loop
-        dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
-        dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // Branch taken-target landing (proves Branch won)
-        condition=0;   // Branch taken when it fires
+        dut.ptsg_imem.g_sim.mem[4]=I_LOOP(16'h0005);         // Q: Loop queued first -> queued_valid 0->1
+        dut.ptsg_imem.g_sim.mem[5]=I_BRANCH(16'h0000,12'd3); // Q: Branch queued SECOND, queued_valid
+                                                              // already 1 -> SN-overwrite HALT
         start;
-        seen=0;
-        for (k=0;k<300;k=k+1) begin @(posedge clk); #1;
-            if (timing_signals===16'h0888) begin seen=1; k=300; end end
-        if (seen) $display("PASS T21: later Q reservation (Branch) overwrote the earlier one (Loop)");
-        else begin $display("FAIL T21: never observed the Branch-won marker (0x0888) — last-write-wins broken?");
+        repeat (30) @(posedge clk); #1;
+        if (dut.fsm===3'd5 && dut.error_flag===1'b1 && state_number===12'd5)
+            $display("PASS T21: second Q-band SN reservation while one is pending -> HALT (C3-F26/C8)");
+        else begin
+            $display("FAIL T21: fsm=%0d error_flag=%b state=%0d", dut.fsm, dut.error_flag, state_number);
             errors=errors+1; end
         condition=0;
 

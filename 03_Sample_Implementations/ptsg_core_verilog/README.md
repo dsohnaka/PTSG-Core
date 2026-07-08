@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot last-write-wins, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding, queued-Branch taken/not-taken/self-loop, queued-Call, queued-Return shallow/S_POP, Q-slot SN-overwrite HALT, FG-illegal Global HALT, S_HALT insertion rescue, stray/FG Prog End HALT). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -110,8 +110,10 @@ running them: **C3-F23** (the FG-Global exclusion principle) says only
 Reset, Stay Set and NOP are legal as foreground (outside-a-window) Global
 commands — Base Set, Return, Sub-sequence Call, Loop and Prog End are
 window-only. This implementation detects the FG-illegal case for Base Set,
-Return, Call, Loop and Prog End, and also detects a stray/duplicate Prog
-End scanned while already in the Q band, and enters a dedicated
+Return, Call, Loop and Prog End, a stray/duplicate Prog End scanned while
+already in the Q band, and (C3-F26/C8) a second Q-band State-Number
+reservation (Loop/Jump/Branch/Call/Return) scanned while an earlier one is
+still pending — and enters a dedicated
 **`S_HALT`** state per **C3-F24**: State Number holds at the violating
 instruction, the registered `error_flag` output is raised, and the FSM
 stays there — the same capture a SignalTap trigger would want — until
@@ -126,8 +128,10 @@ window-only even when reached via an insertion.
 **C3-F23**（FG-Global排他原則）は、フォアグラウンド（窓外）のGlobalコマンドとして
 合法なのは Reset・Stay Set・NOP のみであり、Base Set・Return・サブシーケンスCall・
 Loop・Prog End はウィンドウ限定であると規定する。本実装は Base Set・Return・Call・
-Loop・Prog End についてFG違法条件を検出し、さらにQ帯域内で既にProg Endを一度
-消費した後の迷子・重複Prog Endも検出したうえで、**C3-F24** に従って専用の
+Loop・Prog End についてFG違法条件を検出し、Q帯域内で既にProg Endを一度消費した後の
+迷子・重複Prog Endを検出し、さらに（C3-F26/C8）先に予約されたQ帯域 State Number
+予約（Loop/Jump/Branch/Call/Return）がまだ発火していないうちに二つ目の予約が
+来た場合も検出したうえで、**C3-F24** に従って専用の
 **`S_HALT`** ステートに入る：State Numberは違反命令で保持され、レジスタ化された
 `error_flag` 出力が立ち、ハードウェアリセットか `insert_req` がコアを救出する
 までFSMはそこに留まる（挿入は `error_flag` をクリアし、通常の自動保存経路で
@@ -155,10 +159,11 @@ following are faithful to the canonical patterns but simplified:
   holding-register context at Stay-timeup, including the S_POP fallback for
   a deeper stacked context). **Reset** is queued separately (its own
   independent reservation, not sharing this slot) and wins with absolute
-  priority at Stay-timeup over whatever the slot holds. Overwrite arbitration
-  beyond simple last-write-wins (C8's SN-reservation-overwrite HALT) needs
-  the Phase-4 S_HALT machinery and is not yet implemented — all internal
-  sub-opcodes now queue in the Q band (Phase 3 complete).
+  priority at Stay-timeup over whatever the slot holds. Per C3-F26/C8, the
+  FIRST SN reservation in a fresh window's Q band always succeeds
+  (last-write-wins into an empty slot), but a SECOND SN reservation (Loop/
+  Jump/Branch/Call/Return) scanned while one is already pending HALTs
+  instead of silently overwriting it (Phase 4d).
 - **Indirect read for a queued Loop or Jump** is not performed; a queued Loop
   uses its literal D16–D31 target (`0` ⇒ zero iterations, C4-V1), and a queued
   Jump(0) is treated the same way — queued as the literal address 0, not
