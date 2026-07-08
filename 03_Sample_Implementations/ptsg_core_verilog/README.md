@@ -28,13 +28,13 @@ iverilog -g2012 -o sim ptsg_core.v ptsg_core_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp sim
 # Expected:
-#   PASS A..E, ALL TESTS PASSED
+#   PASS A..G, ALL TESTS PASSED
 
 # Conformance regression (prescaled timing contracts, PRESCALE=5):
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T33, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T34, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -103,6 +103,7 @@ reference resolves them according to the contributor's documented leans:
 | C3-F22 Reset bands (PROVISIONAL) | FG/BG fire immediately, no tick-gate. **Open interpretation, flagged for architect review:** a BG Reset panics State Number to 0 but leaves the Stay window open — the §3.4b table only arms the stay counter for BG Reset and is silent on window state (RH014, conformance test T10). |
 | Queued Reset priority (architect ruling 2026-07-08) | A queued Reset is reserved independently of the shared Loop/Jump queue slot and wins with absolute priority at Stay-timeup — any queued Loop/Jump/insertion is discarded and Reset performs a fully destructive clear (RH015, conformance test T11). |
 | Stay Set band-split (Phase 6 + RH027 audit, PROVISIONAL) | FG opens a fresh window (drives tsig, resets the stay counter, immediate, writes Stay Start State, re-arms all window/queue/pairing state). BG re-kicks an already-open window with exactly what its §3.4b cells state and nothing more: holds tsig, resets the counter, tick-gated advance — window/queue/pairing state untouched (a dangling Base Set's pairing obligation persists across a re-kick). Q is a pure pass-through: holds tsig, counter continues On-Tick uninterrupted, immediate advance, **no side effects** — its firing semantics are still to be defined by the architect (CHANGES item C4); in particular it must NOT clear `queued_valid` (that would silently discard an SN reservation, contradicting C8) nor `q_base_pending` (that would erase the unpaired-Base-Set evidence). (RH026/RH027, conformance tests T30/T31.) |
+| Coincident-tick discipline (RH028, architect findings 2026-07-08) | At PRESCALE=1 every clock is a tick, so Stay Set / Stay always land ON a tick. A tick coincident with a **FG Stay Set** counts as the new window's tick #1 (increment wins over the arm-clear — FG Stay Set consumes no tick; the BG re-kick's gating tick, by contrast, is consumed by the Stay Set itself and does not count). A tick coincident with a **Stay's execute clock** counts too; a bare (windowless) Stay whose deadline is that very tick times up same-clock, so bare Stay-1 @PRESCALE=1 = exactly one clock, like FG NOP. The S_WAIT deadline test is `>=` (was `==`): a deadline that passed during the arm/scan pipeline fires at the first S_WAIT tick — earliest realizable, graceful degradation instead of a 2^13-count runaway (architect-approved over a HALT). Windowed floor: a windowed Stay is exact when N ≥ scan-length+1; below that it fires earliest. (Tests: functional F/G at PRESCALE=1, conformance T34 at PRESCALE=5.) |
 
 ## Error HALT / エラーHALT（C3-F23, C3-F24）
 

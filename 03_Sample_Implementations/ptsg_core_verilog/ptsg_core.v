@@ -236,6 +236,27 @@
 //                                          and T33 (S_HALT insertion rescue with an occupied holding
 //                                          register — exercises the rescue's S_PUSH spill path, which
 //                                          T23 did not cover).
+// 028 2026-07-08       Claude Code   Fix : PRESCALE=1 coincident-tick discipline (architect findings
+//                                          2026-07-08). At PRESCALE=1 every clock is a tick, so Stay Set
+//                                          and Stay always land ON a tick; three coordinated fixes keep
+//                                          the written Stay count exact there (and de-risk any prescale):
+//                                          (1) FG Stay Set: a coincident tick COUNTS — increment takes
+//                                          priority over the arm-clear (architect's proposed form
+//                                          verbatim); FG Stay Set consumes no tick, so the coincident
+//                                          tick is the new count's tick #1. BG re-kick unchanged: its
+//                                          gating tick is consumed by the Stay Set itself. (2) OP_STAY:
+//                                          the execute-clock coincident tick counts in the bare
+//                                          (windowless) case too (in-window was already covered by the
+//                                          RH011 hoisted rule), and a bare Stay whose deadline IS that
+//                                          coincident tick times up same-clock — bare Stay-1 @PRESCALE=1
+//                                          = exactly one clock, like FG NOP. (3) S_WAIT deadline test
+//                                          == -> >=: a deadline that passed during the arm/scan pipeline
+//                                          fires on the first S_WAIT tick (earliest realizable) instead
+//                                          of silently running away through a 2^13-count wrap. Measured
+//                                          before/after: windowed Stay-1@P=1 runaway -> 3-clock resume;
+//                                          bare Stay-2/Stay-1 loops 5/4 -> exact 4/3 clocks; idiom-D
+//                                          duty @P=1 6:6 -> written 5:5; over-constrained window @P=5
+//                                          runaway -> earliest-tick resume. T1-T33 unaffected.
 //
 // ============================================================================
 
@@ -853,7 +874,17 @@ module ptsg_core #(
                                     queued_valid     <= 1'b0;                                                   //
                                     base_pending     <= 1'b0;                                                   //
                                     q_base_pending   <= 1'b0;                                                   //
-                                    stay_cnt         <= {(CNT_W+1){1'b0}};                                      //
+                                    // RH028 (architect, 2026-07-08): a tick coincident with the FG Stay Set    //
+                                    // (guaranteed at PRESCALE=1; possible off-grid after FG Reset) must COUNT  //
+                                    // — the increment takes priority over the arm-clear, else that tick is    //
+                                    // lost and the written Stay count is violated (measured: idiom-D duty at  //
+                                    // PRESCALE=1 read 6:6 for a written 5:5). FG Stay Set does not consume a  //
+                                    // tick (§3.4b Prescaler Tick "Ignored", Leading-edge exception), so a     //
+                                    // coincident tick belongs to the NEW count, as tick #1. Contrast the BG   //
+                                    // re-kick above: it "Consumes one tick", i.e. its gating tick is spent on //
+                                    // the Stay Set itself and correctly does NOT count into the new count.    //
+                                    if (presc_tick) stay_cnt <= stay_cnt + 1'b1;                                //
+                                    else            stay_cnt <= {(CNT_W+1){1'b0}};                              //
                                     timing_signals   <= tsig;                                                   //
                                     state_num        <= state_num + 1'b1;                                       //
                                 end                                                                             //
@@ -1055,9 +1086,30 @@ module ptsg_core #(
                     // --------------------------------------------------------
                     OP_STAY: begin
                         //stay_cnt       <= {(CNT_W+1){1'b0}};  // Del : The stay counter may have already started counting in StaySet, so it should not be cleared here. - RH 003 Arch. Ohnaka (2026-06-14 22:06)
-                        stay_target    <= stay_dur;
-                        timing_signals <= tsig;        // held value during wait (C3-T1 A)
-                        fsm            <= S_WAIT;
+                        // RH028: a tick coincident with the Stay's own execute clock counts —
+                        // guaranteed at PRESCALE=1, where every Stay transition lands on a tick
+                        // (whether reached from FG, BG, or the Q scan). In-window this duplicates
+                        // the hoisted RH011 rule (same value assigned twice, harmless); the bare
+                        // (windowless FG) case was previously uncovered, costing every bare Stay
+                        // one extra clock at PRESCALE=1 (Stay-N took N+1 clocks).
+                        // Additionally, a bare Stay whose deadline IS the coincident tick
+                        // (Stay-1 at PRESCALE=1, or an off-grid coincidence after FG Reset)
+                        // times up on this very clock — no S_WAIT entry — making the minimal
+                        // Stay-1 consume exactly one clock, like FG NOP. This same-clock bare
+                        // timeup needs none of the windowed dispatch machinery: with no window
+                        // there is no queue, no pending Reset, and a pending insertion would
+                        // have preempted this instruction via insert_pending.
+                        if (!window_open && presc_tick && (stay_cnt >= stay_dur - 1'b1)) begin
+                            stay_cnt_match <= 1'b1;
+                            stay_cnt       <= {(CNT_W+1){1'b0}};
+                            timing_signals <= tsig;
+                            state_num      <= state_num + 1'b1;
+                        end else begin
+                            if (presc_tick) stay_cnt <= stay_cnt + 1'b1;
+                            stay_target    <= stay_dur;
+                            timing_signals <= tsig;        // held value during wait (C3-T1 A)
+                            fsm            <= S_WAIT;
+                        end
                         // RH004 (2026-06-14, Arch. Ohnaka): in-window tick increment — superseded
                         // by the hoisted single rule above the case (RH011 / A4).
                     end
@@ -1155,7 +1207,19 @@ module ptsg_core #(
             // ================================================================
             S_WAIT: begin
                 if (presc_tick) begin
-                    if (stay_cnt == (stay_target - 1'b1)) begin
+                    // RH028: >= (was ==). If the deadline tick fell on a pre-S_WAIT
+                    // clock (the arm/scan pipeline — guaranteed reachable at
+                    // PRESCALE=1 for a windowed Stay-1/Stay-2, and at any PRESCALE
+                    // when the BG scan runs longer than the written Stay), the
+                    // counter has already passed target-1 and an equality test can
+                    // never fire: the wait silently ran away for a full 2^13-count
+                    // wrap. With >=, an already-passed deadline fires the timeup on
+                    // the FIRST tick in S_WAIT — the earliest realizable moment
+                    // (architect-approved choice over a HALT: minimal Stays must
+                    // work, and an over-constrained window degrades gracefully).
+                    // For exact programs, >= and == coincide — no verified timing
+                    // changes (T1 25:25, T2 30:30, T32 self-loop all unaffected).
+                    if (stay_cnt >= (stay_target - 1'b1)) begin
                         // ---- Stay-timeup -----------------------------------
                         stay_cnt_match <= 1'b1;
                         stay_cnt       <= {(CNT_W+1){1'b0}};  // Add : Clear stay counter and match flag; close the window. - RH 002 Arch. Ohnaka (2026-06-14 22:06)
