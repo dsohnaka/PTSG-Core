@@ -14,7 +14,7 @@ module examples_tb;
     wire indirect_req; wire [1:0] indirect_purpose;
     reg  [11:0] indirect_data=0; reg indirect_ready=0;
     integer errors=0, k, toggles;
-    reg lastled, seenF0, seen8;
+    reg lastled, seenF0, seen0002, seen8;
 
     // Clocked monitor: latch the canonical background external-register write the
     // moment it appears on the bus (ext_op_valid is a one-clock pulse).
@@ -69,13 +69,19 @@ module examples_tb;
         condition=0;
 
         // ---- sub_sequence_branching ----
+        // Call/Return run in the background band (window-only, C3-F23), which
+        // holds timing_signals (Held) — so the subroutine-body NOP's own tsig
+        // (0x00F0) is never driven. Verification checks state_number reaching
+        // the subroutine body directly, then the Stay that receives the
+        // return-to-after (which does drive its own tsig, regardless of band).
         load("examples/sub_sequence_branching.hex");
-        seenF0=0;
+        seenF0=0; seen0002=0;
         for (k=0;k<60;k=k+1) begin @(posedge clk); #1;
-            if (timing_signals===16'h00F0) seenF0=1; end
-        // after the subroutine, control returns to the 0x0002 state
-        if (seenF0) $display("PASS sub_sequence: subroutine body executed and returned");
-        else begin $display("FAIL sub_sequence: subroutine never ran"); errors=errors+1; end
+            if (state_number===12'd6) seenF0=1;
+            if (seenF0 && timing_signals===16'h0002) seen0002=1; end
+        if (seenF0 && seen0002) $display("PASS sub_sequence: subroutine body executed and returned");
+        else begin $display("FAIL sub_sequence: subroutine-reached=%0d returned=%0d",seenF0,seen0002);
+            errors=errors+1; end
 
         // ---- multi_signal_timing ----
         load("examples/multi_signal_timing.hex");

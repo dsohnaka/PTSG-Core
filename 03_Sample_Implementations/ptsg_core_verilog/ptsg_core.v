@@ -149,6 +149,15 @@
 //                                          stack_depth are live registers, read at firing); fires by restoring
 //                                          them at Stay-timeup, including the S_POP fallback for a deeper
 //                                          stacked context.
+// 020 2026-07-08       Claude Code   Add : Phase 4a/4b — new S_HALT FSM state, error_flag output port, and
+//                                          the halt task (C3-F24 runaway-error trap; state_num holds at the
+//                                          violating instruction, escape via hardware reset or an insertion
+//                                          that auto-saves the halted address). First traps wired in: Base
+//                                          Set/Return/Call/Loop's foreground case now HALTs instead of
+//                                          silently running (C3-F23 FG-Global exclusion principle) — closes
+//                                          the "documented deviation" gaps Phase 3 left open. need_ind_loop
+//                                          gained a window_open term so an FG indirect-target Loop reaches
+//                                          the same HALT trap instead of resolving via S_IND first.
 //
 // ============================================================================
 
@@ -215,7 +224,15 @@ module ptsg_core #(
     output wire                 indirect_req,
     output wire [1:0]           indirect_purpose, // 00 = Jump, 01 = Loop target
     input  wire [ADDR_W-1:0]    indirect_data,
-    input  wire                 indirect_ready
+    input  wire                 indirect_ready,
+
+    // ---- Error-HALT flag (Phase 4, C3-F24) -----------------------------------
+    // Registered; raised on entering S_HALT, held until hardware reset (or an
+    // insertion rescues the core, see the S_HALT state below). Doubles as a
+    // SignalTap trigger (the capture shows the violating scene, since
+    // state_number holds at the violating instruction) and an insertion
+    // trigger for automated recovery/diagnosis (C3-F24).
+    output reg                  error_flag
 );
 
     // ========================================================================
@@ -329,7 +346,8 @@ module ptsg_core #(
                      S_WAIT = 3'd1,
                      S_IND  = 3'd2,
                      S_PUSH = 3'd3,
-                     S_POP  = 3'd4;
+                     S_POP  = 3'd4,
+                     S_HALT = 3'd5;   // Phase 4, C3-F24: runaway-error trap
     reg [2:0] fsm;
 
     // Pending context for a stalled (PUSH) auto-save -------------------------
@@ -389,8 +407,14 @@ module ptsg_core #(
     // queued Loop's indirect target (C4-V1: "queued Loop uses its literal
     // D16-D31 target").
     wire need_ind_jump = (opcode == OP_JUMP) && (operand == 12'd0) && !in_queued_band;
+    // Phase 4b: gains a window_open term. Loop is FG-illegal (C3-F23) — an
+    // FG indirect-target Loop (g_ext==0) must reach SUB_LOOP's case and HALT
+    // there like any other FG Loop, not be intercepted here and silently
+    // resolved via S_IND. (Jump has no such restriction — Jump is a
+    // top-level structural opcode, not a Global sub-opcode, so it is not
+    // subject to C3-F23 and need_ind_jump is unaffected.)
     wire need_ind_loop = is_internal_global && (g_subop == SUB_LOOP) &&
-                         (g_ext == 16'd0) && !in_queued_band;
+                         (g_ext == 16'd0) && !in_queued_band && window_open;
     wire need_indirect = (fsm == S_RUN) && !insert_pending &&
                          (need_ind_jump || need_ind_loop);
 
@@ -514,6 +538,7 @@ module ptsg_core #(
             loop_cnt_match  <= 1'b0;
             stay_cnt_match  <= 1'b0;
             pend_is_insert  <= 1'b0;
+            error_flag      <= 1'b0;
         end else begin
             // -------- Default (one-clock) pulse de-assertions ----------------
             stack_push_req <= 1'b0;
@@ -626,16 +651,31 @@ module ptsg_core #(
                                 // =============================================================================//
                             end
                             SUB_BASESET: begin
-                                // Mark the current address as the Loop base and
-                                // advance. The base address is where Loop jumps
-                                // back to, so a loop re-enters this state every
-                                // iteration; Base Set is therefore idempotent and
-                                // must NOT auto-save (that would push a context per
-                                // iteration). This reference keeps a single-level
-                                // base — nested-loop base-stacking (spilling the
-                                // previous base to the external stack) is omitted.
-                                base_addr <= state_num;
-                                state_num <= state_num + 1'b1;
+                                // =============================================================================//
+                                // REVISION HISTORY 020 (Phase 4b)                                              //
+                                // 2026-07-08 Claude Code  Mod : Base Set gains its first band-awareness: FG    //
+                                //      is §3.4b-illegal (C3-F23) -> runaway error, HALT (C3-F24). BG/Q keep    //
+                                //      the existing immediate behavior for now — real Q semantics (Base :=     //
+                                //      Stay Start State, C3-F25) are Phase 5 work; until then Q Base Set        //
+                                //      behaves like BG here (documented deviation, matching the                //
+                                //      Return/Call/Loop FG-HALT-pending pattern Phase 3 left open).             //
+                                // =============================================================================//
+                                if (window_open) begin      // as background (or, pending Phase 5, Que) command //
+                                    // Mark the current address as the Loop base and
+                                    // advance. The base address is where Loop jumps
+                                    // back to, so a loop re-enters this state every
+                                    // iteration; Base Set is therefore idempotent and
+                                    // must NOT auto-save (that would push a context per
+                                    // iteration). This reference keeps a single-level
+                                    // base — nested-loop base-stacking (spilling the
+                                    // previous base to the external stack) is omitted.
+                                    base_addr <= state_num;
+                                    state_num <= state_num + 1'b1;
+                                end
+                                else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
+                                    halt;                                                                       //
+                                end                                                                             //
+                                // =============================================================================//
                             end
                             SUB_STAYSET: begin
                                 // Open the window; clear/arm the stay counter
@@ -655,9 +695,8 @@ module ptsg_core #(
                                 //      needed (hr_state/hr_loop/hr_base/hr_ins/stack_depth are live registers, //
                                 //      read at firing, not at scan time — nothing else in a Q band can touch   //
                                 //      them between the Return's reservation and the window's own timeup).     //
-                                //      FG is §3.4b-illegal (C3-F23, HALT) but the HALT machinery is Phase-4    //
-                                //      work, so FG still behaves like BG here (documented deviation, matching  //
-                                //      Branch's and Call's own pending FG-HALT gap).                           //
+                                //      FG is §3.4b-illegal (C3-F23) -> runaway error, HALT (C3-F24) — Phase 4b //
+                                //      closes the gap Phase 3c left open.                                       //
                                 // =============================================================================//
                                 if (in_queued_band) begin                    // as Que command (after Prog End) //
                                     queued_valid  <= 1'b1;                                                      //
@@ -665,7 +704,7 @@ module ptsg_core #(
                                     queued_subop  <= SUB_RETURN;                                                 //
                                     state_num     <= state_num + 1'b1;                    // scan on            //
                                 end                                                                             //
-                                else begin        // as background (and, pending Phase 4, foreground) command   //
+                                else if (window_open) begin       // as background command (inside Stay window) //
                                     // Restore the held context.
                                     state_num <= hr_ins ? hr_state : (hr_state + 1'b1);
                                     loop_cnt  <= hr_loop;
@@ -678,6 +717,9 @@ module ptsg_core #(
                                         hr_occupied <= 1'b0;
                                     end
                                 end                                                                             //
+                                else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
+                                    halt;                                                                       //
+                                end                                                                             //
                                 // =============================================================================//
                             end
                             SUB_CALL: begin
@@ -688,9 +730,8 @@ module ptsg_core #(
                                 //      queued_target = save_state + g_ext, the offset-16-D31 target) and       //
                                 //      fires unconditionally at Stay-timeup — Call has no Condition to         //
                                 //      evaluate, unlike Branch, so firing is a plain save_or_set the moment    //
-                                //      the reservation is checked. FG is §3.4b-illegal (C3-F23, HALT) but      //
-                                //      the HALT machinery is Phase-4 work, so FG still behaves like BG here    //
-                                //      (documented deviation, matching Branch's own pending FG-HALT gap).      //
+                                //      the reservation is checked. FG is §3.4b-illegal (C3-F23) -> runaway     //
+                                //      error, HALT (C3-F24) — Phase 4b closes the gap Phase 3b left open.      //
                                 // =============================================================================//
                                 if (in_queued_band) begin                    // as Que command (after Prog End) //
                                     queued_valid      <= 1'b1;                                                  //
@@ -700,7 +741,7 @@ module ptsg_core #(
                                     queued_target      <= state_num + g_ext[ADDR_W-1:0];  // implicit zero-ext   //
                                     state_num          <= state_num + 1'b1;               // scan on            //
                                 end                                                                             //
-                                else begin        // as background (and, pending Phase 4, foreground) command   //
+                                else if (window_open) begin       // as background command (inside Stay window) //
                                     // Unconditional call: auto-save the call address
                                     // (Return restores saved+1, the return-to-after
                                     // convention C3-F12) then jump by the 12-bit
@@ -710,9 +751,20 @@ module ptsg_core #(
                                                 state_num + g_ext[ADDR_W-1:0],
                                                 1'b0);
                                 end                                                                             //
+                                else begin      // as foreground command -> FG-illegal (C3-F23), runaway error //
+                                    halt;                                                                       //
+                                end                                                                             //
                                 // =============================================================================//
                             end
                             SUB_LOOP: begin
+                                // =============================================================================//
+                                // REVISION HISTORY 020 (Phase 4b)                                              //
+                                // 2026-07-08 Claude Code  Mod : Loop's FG case now HALTs (C3-F23/C3-F24)       //
+                                //      instead of silently running as an immediate loop. (need_ind_loop        //
+                                //      also gained a window_open term above, so an FG indirect-target Loop     //
+                                //      (g_ext==0) no longer escapes into S_IND before ever reaching this       //
+                                //      case — it now HALTs here too, the same as a literal-target FG Loop.)    //
+                                // =============================================================================//
                                 if (in_queued_band) begin
                                     // Defer to Stay-timeup (queued band).
                                     // RH014: queued_opcode is set explicitly (not left
@@ -725,8 +777,8 @@ module ptsg_core #(
                                     queued_opcode <= OP_GLOBAL;
                                     queued_target <= g_ext[LOOP_W-1:0];
                                     state_num     <= state_num + 1'b1;
-                                end else begin
-                                    // Immediate / foreground Loop (literal target;
+                                end else if (window_open) begin
+                                    // Immediate background Loop (literal target;
                                     // indirect target handled via S_IND above).
                                     if (loop_exits(loop_cnt, g_ext[LOOP_W-1:0])) begin
                                         loop_cnt       <= {LOOP_W{1'b0}};
@@ -736,6 +788,9 @@ module ptsg_core #(
                                         loop_cnt  <= loop_cnt + 1'b1;
                                         state_num <= base_addr;
                                     end
+                                end else begin
+                                    // Foreground -> FG-illegal (C3-F23), runaway error.
+                                    halt;
                                 end
                             end
                             SUB_PROGEND: begin
@@ -1085,6 +1140,25 @@ module ptsg_core #(
                 end
             end
 
+            // ================================================================
+            //  S_HALT — runaway-error trap (C3-F24). State Number holds at
+            //           the violating instruction (the scene is preserved,
+            //           for SignalTap capture); error_flag stays asserted.
+            //           Escape: hardware reset, or an insertion (auto-saves
+            //           the halted address exactly like ordinary insertion,
+            //           C3-T7/C3-F12, so a rescue handler's eventual Return
+            //           resumes at halted_address+1 — no special-casing).
+            //           ISMCE live-patch-over-JTAG is the third escape route
+            //           C3-F24 lists; it is an external repair workflow, not
+            //           an RTL behavior.
+            // ================================================================
+            S_HALT: begin
+                if (insert_req) begin
+                    error_flag <= 1'b0;
+                    save_or_set(state_num, 1'b1, insert_target, 1'b1);
+                end
+            end
+
             default: fsm <= S_RUN;
             endcase
         end
@@ -1100,6 +1174,18 @@ module ptsg_core #(
     //   target     : where execution continues immediately after the save
     //   is_insert  : pulse insert_ack (now, or on S_PUSH completion) — RH013
     // ========================================================================
+    // ========================================================================
+    //  Runaway-error trap (task, Phase 4 / C3-F24): enter S_HALT and raise
+    //  error_flag. state_num is deliberately left untouched by every caller —
+    //  it holds at the violating instruction, preserving the scene.
+    // ========================================================================
+    task halt;
+        begin
+            fsm        <= S_HALT;
+            error_flag <= 1'b1;
+        end
+    endtask
+
     // ========================================================================
     //  Branch decision (task): the Condition-directed next-state selection,
     //  shared by the FG (tick-gated) and BG/Q (full-clock) bands of OP_BRANCH.

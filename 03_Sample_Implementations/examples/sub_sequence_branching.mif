@@ -1,15 +1,20 @@
 -- sub_sequence_branching.mif — Sub-sequence Call + Return
+-- Call/Return are window-only (C3-F23); Stay Set opens a window and they run in
+-- the background band. The return-to-after landing is a Stay (drives its own
+-- tsig regardless of band) rather than a NOP, since BG commands hold
+-- timing_signals. See sub_sequence_branching.hex for the full state table.
 DEPTH = 256;
 WIDTH = 32;
 ADDRESS_RADIX = HEX;
 DATA_RADIX = HEX;
 CONTENT BEGIN
-0 : 00010700;   -- NOP timing_signals = 0x0001 (main line)
-1 : 00040400;   -- Call offset 4 -> state 5 (save addr 1)
-2 : 00020700;   -- NOP timing_signals = 0x0002 (return-to-after lands here)
-3 : 00000000;   -- Reset (restart demo)
-4 : 00000043;   -- Jump 4 (padding / halt)
-5 : 00F00700;   -- NOP timing_signals = 0x00F0 (subroutine body)
-6 : 00000300;   -- Return (-> state 2)
-[7..FF] : 00000000;
+0 : 00010700;   -- NOP timing_signals = 0x0001 (main line, foreground)
+1 : 00000200;   -- Stay Set (opens the window)
+2 : 00040400;   -- Call offset 4 -> state 6 (save addr 2), background
+3 : 00020011;   -- Stay 1, timing_signals = 0x0002 (return-to-after lands here; closes window)
+4 : 00000000;   -- Reset (restart demo, foreground)
+5 : 00000053;   -- Jump 5 (padding / halt)
+6 : 00F00700;   -- NOP timing_signals = 0x00F0 (subroutine body, background)
+7 : 00000300;   -- Return (-> state 3), background
+[8..FF] : 00000000;
 END;

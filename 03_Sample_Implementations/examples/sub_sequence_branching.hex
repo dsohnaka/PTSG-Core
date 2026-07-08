@@ -1,16 +1,25 @@
 // sub_sequence_branching — Sub-sequence Call + Return (auto-save / return-to-after)
+// Call/Return are window-only (C3-F23 FG-Global exclusion; Phase 4b HALTs them in
+// FG) — Stay Set opens a window and they run in the background band. Since BG
+// commands hold timing_signals (Held, per §3.4b), the return-to-after landing is
+// a Stay (which always drives its own tsig at the S_RUN->S_WAIT transition,
+// regardless of band) rather than a NOP; the subroutine-body marker (0x00F0) is
+// documentation only — verification checks state_number reaching state 6.
 // State table:
-//   0: Global NOP, timing_signals = 0x0001 (main line)
-//   1: Sub-sequence Call, offset 4 (D16-D31 = 4) -> jump to state 5, save addr 1
-//   2: Global NOP, timing_signals = 0x0002 (return lands here: saved 1, +1 = 2)
-//   3: Global Reset (restart the demo)
-//   4: Jump 4 (padding / unreachable halt)
-//   5: Global NOP, timing_signals = 0x00F0 (subroutine body)
-//   6: Global Return (restore -> state 2)
+//   0: Global NOP, timing_signals = 0x0001 (main line, foreground)
+//   1: Stay Set (opens the window)
+//   2: Sub-sequence Call, offset 4 (D16-D31 = 4) -> jump to state 6, save addr 2
+//   3: Stay 1, timing_signals = 0x0002 (return lands here: saved 2, +1 = 3;
+//      also closes the window at timeup)
+//   4: Global Reset (restart the demo; foreground, window already closed)
+//   5: Jump 5 (padding / unreachable halt)
+//   6: Global NOP, timing_signals = 0x00F0 (subroutine body, background)
+//   7: Global Return (restore -> state 3)
 00010700
+00000200
 00040400
-00020700
+00020011
 00000000
-00000043
+00000053
 00F00700
 00000300

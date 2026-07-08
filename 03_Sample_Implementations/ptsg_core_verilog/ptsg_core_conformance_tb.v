@@ -52,15 +52,18 @@
 //         immediate (full system clock) with tsig held, matching
 //         literal BG Jump.
 //    T15 — RH017 (Phase 3a): a queued (Q-band) Branch, taken, auto-saves
-//         its own address and jumps to the taken-target at Stay-timeup; a
-//         subsequent Return resumes at save_state+1 (C3-F12).
+//         its own address and jumps to the taken-target at Stay-timeup —
+//         verified via whitebox hr_state inspection (Phase 4b: the taken
+//         landing is past the window's close, so Return there is
+//         FG-illegal, C3-F23; a real Return round trip is exercised by T19).
 //    T16 — RH017: a queued Branch, not taken, resumes at save_state+1
 //         with no auto-save (C2-F5).
 //    T17 — RH017: a queued Branch with operand 0 (self-loop idiom),
 //         taken, resumes at its own address with no auto-save.
 //    T18 — RH018 (Phase 3b): a queued (Q-band) Call, unconditional,
 //         auto-saves its own address and jumps to the target at
-//         Stay-timeup; a subsequent Return resumes at save_state+1.
+//         Stay-timeup — verified via whitebox hr_state inspection (same
+//         reasoning as T15).
 //    T19 — RH019 (Phase 3c): a queued (Q-band) Return restores the held
 //         context at Stay-timeup, resuming at hr_state+1 — the shallow
 //         (stack_depth==0) case.
@@ -278,8 +281,14 @@ module ptsg_core_conformance_tb;
         dut.ptsg_imem.g_sim.mem[3]=I_STAY(16'h0100,12'd8);   // Stay 8 — insertion arrives mid-wait
         dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0200);          // resume lands here (no +1: C3-F12)
         dut.ptsg_imem.g_sim.mem[5]=I_JUMP(16'h0200,12'd5);   // halt
-        dut.ptsg_imem.g_sim.mem[10]=I_NOP(16'h0400);         // insertion handler body
-        dut.ptsg_imem.g_sim.mem[11]=I_RETURN(16'h0400);      // Return (FG Return: pre-Phase-4 behavior)
+        // The handler itself opens its own Stay window (Stay Set is legal in FG,
+        // C3-F23) so its Return runs in the background band, as Phase 4b now
+        // requires (Return is window-only; FG Return HALTs). This does not
+        // disturb the C3-F12 no-+1 check: the resume address was auto-saved by
+        // the insertion mechanism itself (hr_ins), at insert time, not here.
+        dut.ptsg_imem.g_sim.mem[10]=I_STAYSET(16'h0400);     // handler: open its own window
+        dut.ptsg_imem.g_sim.mem[11]=I_NOP(16'h0400);         // BG handler body
+        dut.ptsg_imem.g_sim.mem[12]=I_RETURN(16'h0400);      // BG Return -> resumes at s4, no +1 (hr_ins)
         start;
         // wait until the core is sitting in the Stay, then request insertion
         k=0; while (state_number!==12'd3 && k<100) begin @(posedge clk); #1; k=k+1; end
@@ -568,19 +577,22 @@ module ptsg_core_conformance_tb;
         dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0555);          // Q-scan continues; also return-to-after landing
         dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
         dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // taken-branch landing marker
-        dut.ptsg_imem.g_sim.mem[9]=I_RETURN(16'h0AAA);       // verify auto-save via Return
+        // Landing at s8 is past the window's own Stay-timeup close (C3-F23:
+        // Return is window-only), so verify the auto-save via whitebox
+        // inspection instead of an actual Return — mirrors T17's dut.hr_occupied
+        // check. hr_state must read 4: the Branch's OWN address (s4), not the
+        // Stay's (s6), proving save_state was captured correctly.
         condition=0;   // held false throughout => Branch taken when evaluated at firing
         start;
-        seen=0; visits=0;   // seen: 0x0888 observed; visits: 0x0555 observed AFTER that
+        seen=0;
         for (k=0;k<300;k=k+1) begin
             @(posedge clk); #1;
-            if (timing_signals===16'h0888) seen=1;
-            if (seen && timing_signals===16'h0555) begin visits=1; k=300; end
+            if (timing_signals===16'h0888) begin seen=1; k=300; end
         end
-        if (seen && visits)
-            $display("PASS T15: Q Branch taken -> auto-save + jump; Return resumed at save_state+1");
+        if (seen && dut.hr_occupied && dut.hr_state===12'd4)
+            $display("PASS T15: Q Branch taken -> auto-save + jump (hr_state=%0d, own address)", dut.hr_state);
         else begin
-            $display("FAIL T15: taken-landed=%0d return-resumed=%0d", seen, visits);
+            $display("FAIL T15: taken-landed=%0d hr_occupied=%b hr_state=%0d", seen, dut.hr_occupied, dut.hr_state);
             errors=errors+1; end
 
         // ================================================================
@@ -646,18 +658,19 @@ module ptsg_core_conformance_tb;
         dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0555);          // Q-scan continues; also return-to-after landing
         dut.ptsg_imem.g_sim.mem[6]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
         dut.ptsg_imem.g_sim.mem[8]=I_NOP(16'h0888);          // call-target landing marker
-        dut.ptsg_imem.g_sim.mem[9]=I_RETURN(16'h0AAA);       // verify auto-save via Return
+        // Same reasoning as T15: verify the auto-save via whitebox inspection
+        // rather than an FG Return (C3-F23 window-only). hr_state must read 4:
+        // the Call's own address (s4).
         start;
-        seen=0; visits=0;
+        seen=0;
         for (k=0;k<300;k=k+1) begin
             @(posedge clk); #1;
-            if (timing_signals===16'h0888) seen=1;
-            if (seen && timing_signals===16'h0555) begin visits=1; k=300; end
+            if (timing_signals===16'h0888) begin seen=1; k=300; end
         end
-        if (seen && visits)
-            $display("PASS T18: Q Call auto-saved + jumped; Return resumed at save_state+1");
+        if (seen && dut.hr_occupied && dut.hr_state===12'd4)
+            $display("PASS T18: Q Call auto-saved + jumped (hr_state=%0d, own address)", dut.hr_state);
         else begin
-            $display("FAIL T18: call-landed=%0d return-resumed=%0d", seen, visits);
+            $display("FAIL T18: call-landed=%0d hr_occupied=%b hr_state=%0d", seen, dut.hr_occupied, dut.hr_state);
             errors=errors+1; end
 
         // ================================================================
@@ -666,21 +679,28 @@ module ptsg_core_conformance_tb;
         //      (return-to-after, C3-F12) — the shallow (stack_depth==0)
         //      case.
         // ================================================================
+        // The setup Call is window-only (C3-F23); wrap it in a Stay window (open
+        // first, Call as BG) rather than run it in FG, then continue scanning
+        // through Prog End into the same window's Q band for the Return.
         reset1;
         dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
-        dut.ptsg_imem.g_sim.mem[1]=I_CALL(16'd3);            // FG Call; own addr=1, target=1+3=4
-        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0222);          // return-to-after landing (hr_state+1=2)
-        dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0444);          // call-target landing (subroutine body)
-        dut.ptsg_imem.g_sim.mem[5]=I_STAYSET(16'h0001);
-        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'h0000);          // BG
-        dut.ptsg_imem.g_sim.mem[7]=I_PROGEND(16'h0000);
-        dut.ptsg_imem.g_sim.mem[8]=I_RETURN(16'h0000);       // Q: Return
-        dut.ptsg_imem.g_sim.mem[9]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);      // open window
+        dut.ptsg_imem.g_sim.mem[2]=I_CALL(16'd3);            // BG Call; own addr=2, target=2+3=5
+        dut.ptsg_imem.g_sim.mem[3]=I_NOP(16'h0222);          // return-to-after landing (hr_state+1=3)
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0444);          // call-target landing (subroutine body), BG
+        dut.ptsg_imem.g_sim.mem[6]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[7]=I_RETURN(16'h0000);       // Q: Return
+        dut.ptsg_imem.g_sim.mem[8]=I_STAY(16'h0001,12'd4);   // Q Stay; closes window at timeup
         start;
         seen=0; visits=0;
+        // The Call lands mid-window (BG), which holds timing_signals (Held,
+        // §3.4b) — so the call-landed check uses state_number, not the 0x0444
+        // marker. The Return's landing, by contrast, fires exactly at
+        // Stay-timeup (window close), which does drive its own tsig — same
+        // mechanism T15/T18 rely on — so 0x0222 remains a valid marker there.
         for (k=0;k<300;k=k+1) begin
             @(posedge clk); #1;
-            if (timing_signals===16'h0444) seen=1;
+            if (state_number===12'd5) seen=1;
             if (seen && timing_signals===16'h0222) begin visits=1; k=300; end
         end
         if (seen && visits)
@@ -696,25 +716,29 @@ module ptsg_core_conformance_tb;
         //      context — verified end-to-end via a real push/pop round
         //      trip through the testbench's external-stack model.
         // ================================================================
+        // Both setup Calls are window-only (C3-F23); wrap them in an outer Stay
+        // window (BG). Call#2's target is itself a (re-arming, always-legal)
+        // Stay Set, matching the original nested-call shape.
         reset1;
         dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
-        dut.ptsg_imem.g_sim.mem[1]=I_CALL(16'd2);            // FG Call#1; own=1, target=1+2=3; hr_state<=1
-        dut.ptsg_imem.g_sim.mem[3]=I_CALL(16'd2);            // FG Call#2; own=3, target=3+2=5;
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);      // outer window
+        dut.ptsg_imem.g_sim.mem[2]=I_CALL(16'd2);            // BG Call#1; own=2, target=2+2=4; hr_state<=2
+        dut.ptsg_imem.g_sim.mem[4]=I_CALL(16'd2);            // BG Call#2; own=4, target=4+2=6;
                                                               // hr_occupied already 1 -> implicit push
-                                                              // (spills {hr_state=1,...}), then hr_state<=3
-        dut.ptsg_imem.g_sim.mem[5]=I_STAYSET(16'h0001);
-        dut.ptsg_imem.g_sim.mem[6]=I_NOP(16'h0000);          // BG
-        dut.ptsg_imem.g_sim.mem[7]=I_PROGEND(16'h0000);
-        dut.ptsg_imem.g_sim.mem[8]=I_RETURN(16'h0000);       // Q: Return #1 -> resumes at hr_state(3)+1=4;
+                                                              // (spills {hr_state=2,...}), then hr_state<=4
+        dut.ptsg_imem.g_sim.mem[5]=I_NOP(16'h0DDD);          // return-to-after landing for Return #1
+        dut.ptsg_imem.g_sim.mem[6]=I_STAYSET(16'h0001);      // Call#2's target: re-arms the (already-open) window
+        dut.ptsg_imem.g_sim.mem[7]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[8]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[9]=I_RETURN(16'h0000);       // Q: Return #1 -> resumes at hr_state(4)+1=5;
                                                               // stack_depth==1 -> falls through to S_POP
-        dut.ptsg_imem.g_sim.mem[9]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
-        dut.ptsg_imem.g_sim.mem[4]=I_NOP(16'h0DDD);          // return-to-after landing for Return #1
+        dut.ptsg_imem.g_sim.mem[10]=I_STAY(16'h0001,12'd4);  // Q Stay; closes window at timeup
         start;
         seen=0; visits=0;
         for (k=0;k<400;k=k+1) begin
             @(posedge clk); #1;
             if (timing_signals===16'h0DDD) seen=1;
-            if (seen && dut.hr_state===12'd1 && dut.stack_depth===16'd0) begin visits=1; k=400; end
+            if (seen && dut.hr_state===12'd2 && dut.stack_depth===16'd0) begin visits=1; k=400; end
         end
         if (seen && visits)
             $display("PASS T20: Q Return with a deeper stacked context fell through to S_POP correctly");

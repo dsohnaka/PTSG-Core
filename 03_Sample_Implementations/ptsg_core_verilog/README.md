@@ -103,6 +103,38 @@ reference resolves them according to the contributor's documented leans:
 | C3-F22 Reset bands (PROVISIONAL) | FG/BG fire immediately, no tick-gate. **Open interpretation, flagged for architect review:** a BG Reset panics State Number to 0 but leaves the Stay window open — the §3.4b table only arms the stay counter for BG Reset and is silent on window state (RH014, conformance test T10). |
 | Queued Reset priority (architect ruling 2026-07-08) | A queued Reset is reserved independently of the shared Loop/Jump queue slot and wins with absolute priority at Stay-timeup — any queued Loop/Jump/insertion is discarded and Reset performs a fully destructive clear (RH015, conformance test T11). |
 
+## Error HALT / エラーHALT（C3-F23, C3-F24）
+
+The Core traps a defined class of illegal-instruction conditions instead of
+running them: **C3-F23** (the FG-Global exclusion principle) says only
+Reset, Stay Set and NOP are legal as foreground (outside-a-window) Global
+commands — Base Set, Return, Sub-sequence Call, Loop and Prog End are
+window-only. This implementation detects the FG-illegal case for Base Set,
+Return, Call and Loop (Prog End's FG/duplicate-in-Q case is Phase 4c,
+not yet implemented) and enters a dedicated **`S_HALT`** state per
+**C3-F24**: State Number holds at the violating instruction, the registered
+`error_flag` output is raised, and the FSM stays there — the same
+capture a SignalTap trigger would want — until either a hardware reset or
+an `insert_req` rescues the core (insertion clears `error_flag` and jumps
+via the normal auto-save path, so a supervising Formation can log the
+fault and resume at a known-good handler address).
+
+コアは、命令として実行する代わりに罠にかける、定義済みの違法命令クラスを持つ。
+**C3-F23**（FG-Global排他原則）は、フォアグラウンド（窓外）のGlobalコマンドとして
+合法なのは Reset・Stay Set・NOP のみであり、Base Set・Return・サブシーケンスCall・
+Loop・Prog End はウィンドウ限定であると規定する。本実装は Base Set・Return・Call・
+Loop についてFG違法条件を検出し（Prog EndのFG／Q帯域内2発目のケースはPhase 4cで
+未実装）、**C3-F24** に従って専用の **`S_HALT`** ステートに入る：State Numberは違反
+命令で保持され、レジスタ化された `error_flag` 出力が立ち、ハードウェアリセットか
+`insert_req` がコアを救出するまでFSMはそこに留まる（挿入は `error_flag` をクリアし、
+通常の自動保存経路でジャンプするため、監督Formationは障害を記録し既知の正常な
+ハンドラアドレスから再開できる）。
+
+| RTL name | Kind | Meaning |
+|---|---|---|
+| `error_flag` | output, registered | Raised on entering `S_HALT`; held until insertion or hardware reset (C3-F24) |
+| `S_HALT` (fsm=5) | internal state | Runaway-error trap; State Number frozen at the violating instruction |
+
 ## Deliberate simplifications / 意図的な簡略化
 
 This is a readable reference, not a fully-elaborated production core. The
