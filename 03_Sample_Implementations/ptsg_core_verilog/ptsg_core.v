@@ -1151,6 +1151,20 @@ module ptsg_core #(
                         // is already cleared above if a Reset just fired) and before the ordinary       //
                         // queued dispatch below, which a HALT here preempts entirely (state_num is left //
                         // untouched, freezing at the Stay that exposed the gap).                        //
+                        //                                                                               //
+                        // ARCHITECT MEMO (2026-07-08, Arch. Ohnaka): the exact HALT trigger the spec     //
+                        // text describes ("a queued Base Set whose Loop lies in the BG window") could   //
+                        // not be pinned down with confidence -- BG is chronologically always earlier    //
+                        // than Q within one window, so it is unclear how that literal condition can     //
+                        // arise. The check above ("no Q Loop ever reserved before Stay-timeup") is this //
+                        // implementer's best-effort substitute, not a confirmed reading. The architect  //
+                        // has separately flagged that Q-execution Loop semantics in general -- nested Q //
+                        // Loops in particular -- remain genuinely undecided (multiple open design       //
+                        // questions, not yet resolved even at the spec level) and are explicitly        //
+                        // deferred: this whole area is planned follow-up work AFTER the current "33     //
+                        // items" conformance-alignment pass this PR belongs to is complete. Do not       //
+                        // over-fit this HALT condition to the current guess in future work -- revisit   //
+                        // it fresh once the architect's Loop-semantics decisions land.                  //
                         // =============================================================================//
                         else if (q_base_pending &&
                                  !(queued_valid && (queued_subop == SUB_LOOP) &&

@@ -188,6 +188,28 @@ Number を `stay_start_state` に書き込む；BG/Q の Stay Set（Call や Loo
 | `stay_start_state` | internal register | Set by a FG Stay Set only; consumed by a queued Base Set (C3-F25) |
 | `q_base_pending` | internal register | Set by a Q Base Set; cleared once a Q Loop is reserved; HALTs at Stay-timeup if still 1 (Q half of the Base Set<->Loop pairing check, C3-F24) |
 
+**Open memo (architect, 2026-07-08) / 備忘録（アーキテクト、2026-07-08）:** the
+`q_base_pending` HALT condition above is this implementer's best-effort
+substitute for spec prose ("a queued Base Set whose Loop lies in the BG
+window") that could not be pinned down with confidence — BG is always
+chronologically earlier than Q within one window, so how that literal
+condition arises is unclear. More broadly, Q-execution Loop semantics —
+nested Q Loops in particular — are genuinely undecided at the spec level
+(multiple open design questions), and are deliberately **deferred**: this
+whole area is planned follow-up work once the current "33-item" conformance
+alignment this PR belongs to is complete. Treat the current HALT condition
+as provisional, not a confirmed reading, until that follow-up lands.
+
+**備忘録（アーキテクト、2026-07-08）:** 上記の `q_base_pending` HALT 条件は、
+「Que の Base Set の Loop が BG ウィンドウ内にある」という仕様文言を確信を
+持って特定できなかったための、実装者による最善の代替である——一つの窓の中で
+BG は Q より時系列的に必ず先に来るため、その文言通りの状況がどう発生し得るのか
+不明である。より広く言えば、Que 実行の Loop 意味論——特に入れ子の Que Loop——は
+仕様レベルでもまだ本当に未決定であり（複数の未解決の設計課題がある）、意図的に
+**先送り**されている：この領域全体は、本PRが属する「33枠」の適合作業が完了した
+後の宿題として計画されている。その宿題が着地するまで、現在のHALT条件は確定した
+読みではなく仮のものとして扱うこと。
+
 ## Deliberate simplifications / 意図的な簡略化
 
 This is a readable reference, not a fully-elaborated production core. The
