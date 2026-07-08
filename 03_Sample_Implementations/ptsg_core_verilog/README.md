@@ -17,7 +17,7 @@ testbench.
 |---|---|
 | `ptsg_core.v` | The PTSG-Core top-level module (decoder, 4 opcodes, 8 internal sub-opcodes, Stay-window/background execution, prescaler, counters + match flags, holding register + external-stack nesting, external buses). Instruction memory lives in the `ptsg_imem` wrapper (`../ai_friendly_vendor_wrappers/ptsg_imem/`). |
 | `ptsg_core_tb.v` | Self-checking functional testbench, PRESCALE=1 (blink, counted Loop, Branch wait, Call/Return, indirect Jump). |
-| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding). Run this after any change to `ptsg_core.v`. |
+| `ptsg_core_conformance_tb.v` | Layer-1 v1.1 **conformance regression** testbench, PRESCALE=5 (duty idiom D 25:25, in-window On-Tick counting, FG prescaling of Branch, BG timing-signal hold, C3-F20 insertion deferral, 16-bit Loop, Q-band NOP, FG/Q/BG Reset banding, queued-Reset priority, indirect-Jump banding). Run this after any change to `ptsg_core.v`. |
 | `examples/` | Instruction-list examples (`.hex` for simulation, `.mif` for Quartus) plus their own testbench and README. |
 
 ## Quick start / クイックスタート
@@ -34,7 +34,7 @@ vvp sim
 iverilog -g2012 -o simc ptsg_core.v ptsg_core_conformance_tb.v \
     ../ai_friendly_vendor_wrappers/ptsg_imem/ptsg_imem.v
 vvp simc
-# Expected: PASS T1..T11, ALL CONFORMANCE TESTS PASSED
+# Expected: PASS T1..T14, ALL CONFORMANCE TESTS PASSED
 ```
 
 Simulation requires `IMEM_VENDOR="SIM"` on the `ptsg_core` instance (the default
@@ -115,8 +115,12 @@ following are faithful to the canonical patterns but simplified:
   internal-mode commands placed after Prog End execute immediately (documented
   deviation; generalizing the shared slot to all commands, with SN-overwrite
   HALT, is Phase 3 / C8 work).
-- **Indirect read for a queued Loop** is not performed; a queued Loop uses its
-  literal D16–D31 target (`0` ⇒ zero iterations, C4-V1).
+- **Indirect read for a queued Loop or Jump** is not performed; a queued Loop
+  uses its literal D16–D31 target (`0` ⇒ zero iterations, C4-V1), and a queued
+  Jump(0) is treated the same way — queued as the literal address 0, not
+  resolved indirectly (RH016; fixes a bug where a Q-band Jump(0) used to
+  hijack the FSM into the indirect-read state mid-scan instead of deferring
+  to Stay-timeup like every other queued command).
 - **Base Set** keeps a single-level base (sets the base and advances). Because a
   loop re-enters the Base Set state each iteration, Base Set is idempotent and
   does not spill the previous base to the external stack; nested-loop

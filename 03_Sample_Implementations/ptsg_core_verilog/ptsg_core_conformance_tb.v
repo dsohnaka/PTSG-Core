@@ -41,6 +41,16 @@
 //    T11 — Architect ruling 2026-07-08: a queued Reset takes absolute
 //         priority over anything else queued in the same window (a Jump
 //         queued before it is completely discarded; Reset always wins).
+//    T12 — RH016: a Q-band Jump(0) no longer hijacks the FSM into S_IND
+//         mid-scan; it queues as its literal value (address 0) and fires
+//         normally at Stay-timeup, matching the queued-Loop-indirect
+//         simplification (C4-V1). indirect_req must never pulse for it.
+//    T13 — RH016: a foreground indirect Jump is tick-gated like every
+//         other FG command (C4-F8) and drives its own tsig immediately —
+//         an indirect-Jump + literal-Jump loop has period = 2 x PRESCALE.
+//    T14 — RH016 regression: a background indirect Jump remains
+//         immediate (full system clock) with tsig held, matching
+//         literal BG Jump.
 // ============================================================================
 `timescale 1ns/1ps
 module ptsg_core_conformance_tb;
@@ -76,6 +86,11 @@ module ptsg_core_conformance_tb;
         .indirect_data(indirect_data), .indirect_ready(indirect_ready));
 
     always #5 clk=~clk;
+    // External indirect-read responder: registered 1-clock (C4-T1 lean B).
+    // Previously missing here (T1-T12 never exercise indirect Jump/Loop, so
+    // indirect_ready staying permanently 0 was silent until T13/T14, which
+    // hung waiting for it — found while debugging this exact addition).
+    always @(posedge clk) indirect_ready <= indirect_req;
 
     // ---- helpers -----------------------------------------------------------
     integer j;
@@ -400,6 +415,96 @@ module ptsg_core_conformance_tb;
             $display("PASS T11: queued Reset overrode a simultaneously-queued Jump (Reset always wins)");
         else begin
             $display("FAIL T11: reset-won=%0d jump-escaped-to-s20=%0d", seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T12 — RH016: a Q-band Jump(0) no longer hijacks the scan into
+        //      S_IND. It is queued as its literal value (jump to address
+        //      0, matching the queued-Loop-indirect simplification,
+        //      C4-V1) and fires normally at Stay-timeup; indirect_req
+        //      must never pulse for it.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_NOP(16'h0000);          // BG
+        dut.ptsg_imem.g_sim.mem[3]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[4]=I_JUMP(16'h0000,12'd0);   // Q: Jump(0) -> queued literal 0
+        dut.ptsg_imem.g_sim.mem[5]=I_STAY(16'h0001,12'd4);   // FG Stay; closes window at timeup
+        indirect_data=12'd99;   // sentinel — must never be consumed
+        start;
+        k=0; while (state_number===12'd0 && k<50) begin @(posedge clk); #1; k=k+1; end  // leave s0
+        seen=0; visits=0;   // seen: indirect_req ever asserted (bad); visits: returned to SN=0
+        for (k=0;k<200;k=k+1) begin
+            @(posedge clk); #1;
+            if (indirect_req===1'b1) seen=1;
+            if (state_number===12'd0) begin visits=1; k=200; end
+        end
+        if (!seen && visits)
+            $display("PASS T12: Q-band Jump(0) queued as literal (no S_IND hijack), fired at timeup");
+        else begin
+            $display("FAIL T12: indirect_req-asserted=%0d returned-to-0=%0d", seen, visits);
+            errors=errors+1; end
+
+        // ================================================================
+        // T13 — RH016: a foreground indirect Jump is tick-gated like
+        //      every other FG command (C4-F8), preserving the structural
+        //      phase-lock (C4-F9), and drives its own tsig field
+        //      immediately (matching literal FG Jump). A 2-command loop
+        //      (indirect Jump + literal Jump back) must have period =
+        //      2 x PRESCALE, mirroring T3's Branch+Jump check.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_JUMP(16'h0002,12'd0);   // FG indirect Jump -> s2 (own tsig 0x0002)
+        dut.ptsg_imem.g_sim.mem[2]=I_JUMP(16'h0000,12'd1);   // FG literal Jump back to s1
+        indirect_data=12'd2;
+        start;
+        t_prev=-1; t_now=0; period=0; seen=0;
+        for (k=0;k<300 && seen<4;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals[1]===1'b1 && t_now==0) begin
+                if (t_prev!=-1) begin
+                    if (period==0)                 period=k-t_prev;
+                    else if ((k-t_prev)!=period)   period=-1;
+                    seen=seen+1;
+                end
+                t_prev=k;
+            end
+            t_now = (timing_signals[1]===1'b1);
+        end
+        if (period==2*PRESCALE)
+            $display("PASS T13: FG indirect Jump tick-gated, loop period=%0d (2 prescale units)", period);
+        else begin
+            $display("FAIL T13: period=%0d (expected %0d) — FG indirect Jump not tick-gated?",
+                     period, 2*PRESCALE);
+            errors=errors+1; end
+
+        // ================================================================
+        // T14 — regression: a background indirect Jump remains immediate
+        //      (full system clock, not tick-gated) and its tsig stays
+        //      held (never driven), matching literal BG Jump.
+        // ================================================================
+        reset1;
+        dut.ptsg_imem.g_sim.mem[0]=I_NOP(16'h0000);
+        dut.ptsg_imem.g_sim.mem[1]=I_STAYSET(16'h0001);
+        dut.ptsg_imem.g_sim.mem[2]=I_JUMP(16'h0002,12'd0);   // BG indirect Jump -> s10 (own tsig must NOT show)
+        dut.ptsg_imem.g_sim.mem[10]=I_NOP(16'h0000);         // BG continues scanning here
+        dut.ptsg_imem.g_sim.mem[11]=I_PROGEND(16'h0000);
+        dut.ptsg_imem.g_sim.mem[12]=I_JUMP(16'h0000,12'd1);  // Q: queued Jump -> s1 (loop back)
+        dut.ptsg_imem.g_sim.mem[13]=I_STAY(16'h0001,12'd3);  // Stay 3
+        indirect_data=12'd10;
+        start;
+        seen=0; visits=0;
+        for (k=0;k<300;k=k+1) begin
+            @(posedge clk); #1;
+            if (timing_signals===16'h0002) seen=1;   // BG indirect Jump's own tsig must never appear
+            if (stay_cnt_match===1'b1) visits=1;      // proves the window completed (BG jump landed OK)
+        end
+        if (!seen && visits)
+            $display("PASS T14: BG indirect Jump landed correctly, stayed immediate, tsig held");
+        else begin
+            $display("FAIL T14: own-tsig-shown=%0d window-completed=%0d", seen, visits);
             errors=errors+1; end
 
         if (errors==0) $display("\nALL CONFORMANCE TESTS PASSED");

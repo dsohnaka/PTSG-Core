@@ -114,6 +114,25 @@
 //                                          hardware rst block for every execution-context register, except
 //                                          presc_cnt (C3-F21, never touched) and timing_signals (drives the
 //                                          captured own-tsig, C7, not zero). Replaces RH014's queued_tsig.
+// 016 2026-07-08       Claude Code   Fix : Indirect Jump (operand 0) band bug, found while investigating an
+//                                          architect concern. need_ind_jump lacked need_ind_loop's existing
+//                                          !in_queued_band exclusion: a Q-band Jump(0) hijacked the FSM into
+//                                          S_IND the instant it was scanned, resolving and jumping mid-scan
+//                                          instead of queuing and firing at Stay-timeup. Fixed by excluding
+//                                          the Q band (queued Jump(0) now falls through to the ordinary
+//                                          in_queued_band branch and is queued as literal 0, matching the
+//                                          existing queued-Loop-indirect simplification, C4-V1). Also found:
+//                                          a foreground indirect Jump completed on an arbitrary system clock
+//                                          instead of a presc_tick boundary, unlike every other FG command
+//                                          (C4-F8) — breaking the structural phase-lock invariant (C4-F9)
+//                                          for any program using an FG indirect Jump; and it never drove its
+//                                          own tsig field, unlike literal FG Jump. Fixed via ind_in_window
+//                                          (captured at request time) splitting S_IND's completion: BG
+//                                          remains immediate; FG latches the result (ind_resolved/ind_target)
+//                                          and commits state_num on the next presc_tick, with tsig driven at
+//                                          the S_RUN->S_IND transition (holds through the stall unchanged,
+//                                          since state_num — and so the tsig wire — does not move until
+//                                          resolution).
 //
 // ============================================================================
 
@@ -255,6 +274,17 @@ module ptsg_core #(
 
     // Indirect-read latch ----------------------------------------------------
     reg               ind_is_loop;      // 0 = indirect Jump, 1 = indirect Loop target
+    // RH016: which band requested an indirect Jump, captured at request time
+    // (need_ind_jump excludes the Q band entirely, so this can only be FG or
+    // BG). BG completes immediately on indirect_ready (matches literal BG
+    // Jump); FG must additionally wait for a presc_tick before committing the
+    // state transition (C4-F8 parity with literal FG Jump — otherwise an FG
+    // indirect Jump could complete off the tick grid and break the
+    // structural phase-lock invariant, C4-F9). ind_resolved/ind_target latch
+    // the read result while FG waits out that extra tick.
+    reg               ind_in_window;
+    reg               ind_resolved;
+    reg [ADDR_W-1:0]  ind_target;
 
     // FSM --------------------------------------------------------------------
     localparam [2:0] S_RUN  = 3'd0,
@@ -307,9 +337,20 @@ module ptsg_core #(
     wire in_queued_band = window_open && prog_end_seen;
 
     // An indirect read is required this RUN clock when:
-    //   * Jump with operand 0, or
-    //   * an immediate/foreground Loop whose D16-D31 target field is 0.
-    wire need_ind_jump = (opcode == OP_JUMP) && (operand == 12'd0);
+    //   * a foreground or background Jump with operand 0, or
+    //   * a foreground or background Loop whose D16-D31 target field is 0.
+    // RH016: need_ind_jump now excludes the queued band (matching
+    // need_ind_loop's existing pattern, which already excluded it). Before
+    // this fix, a Q-band Jump(0) would hijack the FSM into S_IND the instant
+    // it was scanned — bypassing the Q-band's queue-and-fire-at-Stay-timeup
+    // model entirely, resolving and jumping immediately mid-scan, and never
+    // going through the normal Stay-timeup window-close path at all. A
+    // queued Jump's operand 0 now falls through to OP_JUMP's ordinary
+    // in_queued_band branch and is queued as its literal value (jump to
+    // address 0) — the same documented simplification already applied to a
+    // queued Loop's indirect target (C4-V1: "queued Loop uses its literal
+    // D16-D31 target").
+    wire need_ind_jump = (opcode == OP_JUMP) && (operand == 12'd0) && !in_queued_band;
     wire need_ind_loop = is_internal_global && (g_subop == SUB_LOOP) &&
                          (g_ext == 16'd0) && !in_queued_band;
     wire need_indirect = (fsm == S_RUN) && !insert_pending &&
@@ -414,6 +455,9 @@ module ptsg_core #(
             stay_target     <= {(CNT_W+1){1'b0}};
             presc_cnt       <= {PRESC_W{1'b0}};
             ind_is_loop     <= 1'b0;
+            ind_in_window   <= 1'b0;
+            ind_resolved    <= 1'b0;
+            ind_target      <= {ADDR_W{1'b0}};
             fsm             <= S_RUN;
             stack_push_req  <= 1'b0;
             stack_pop_req   <= 1'b0;
@@ -464,8 +508,18 @@ module ptsg_core #(
                 end
                 else if (need_indirect) begin
                     // ---- Begin an indirect read; stall in S_IND ------------
-                    ind_is_loop <= need_ind_loop;
-                    fsm         <= S_IND;
+                    // RH016: capture which band requested this (need_ind_jump/
+                    // need_ind_loop already exclude the Q band, so this is FG
+                    // or BG). An FG indirect Jump drives its own tsig field
+                    // immediately here, matching literal FG Jump — the value
+                    // then holds through the S_IND stall since state_num (and
+                    // so the combinational tsig wire) does not move until
+                    // resolution.
+                    ind_is_loop   <= need_ind_loop;
+                    ind_in_window <= window_open;
+                    ind_resolved  <= 1'b0;
+                    fsm           <= S_IND;
+                    if (need_ind_jump && !window_open) timing_signals <= tsig;
                     // state_num held; indirect_req pulsed combinationally now.
                 end
                 else begin
@@ -801,22 +855,52 @@ module ptsg_core #(
             //  S_IND — wait for the external indirect-read result
             // ================================================================
             S_IND: begin
-                if (indirect_ready) begin
-                    fsm <= S_RUN;
-                    if (ind_is_loop) begin
-                        // indirect_data (ADDR_W bits) zero-extends implicitly to the
-                        // LOOP_W-wide task input; no explicit replication (which would
-                        // be illegal if LOOP_W == ADDR_W).
-                        if (loop_exits(loop_cnt, indirect_data)) begin
-                            loop_cnt       <= {LOOP_W{1'b0}};
-                            loop_cnt_match <= 1'b1;
-                            state_num      <= state_num + 1'b1;
+                // RH016: indirect Jump completion is band-split. BG completes
+                // immediately on indirect_ready (full system clock, matching
+                // literal BG Jump — tsig stays held, never driven here). FG
+                // must land the state transition on a presc_tick (C4-F8
+                // parity with literal FG Jump), so the result is latched into
+                // ind_target/ind_resolved and applied on the next tick — the
+                // indirect_ready handshake itself is not held open waiting
+                // for that tick (it may be a 1-clock pulse, Tie C4-T1 lean B,
+                // so the data must be captured the moment it is presented).
+                // Indirect Loop is unaffected: it is unreachable in the Q
+                // band already (need_ind_loop), and its foreground case is
+                // presently undefined pending the Phase-4 FG-Global HALT
+                // machinery (C3-F23), so no new tick-gating is introduced
+                // for it here.
+                if (!ind_resolved) begin
+                    if (indirect_ready) begin
+                        if (ind_is_loop) begin
+                            fsm <= S_RUN;
+                            // indirect_data (ADDR_W bits) zero-extends implicitly to the
+                            // LOOP_W-wide task input; no explicit replication (which would
+                            // be illegal if LOOP_W == ADDR_W).
+                            if (loop_exits(loop_cnt, indirect_data)) begin
+                                loop_cnt       <= {LOOP_W{1'b0}};
+                                loop_cnt_match <= 1'b1;
+                                state_num      <= state_num + 1'b1;
+                            end else begin
+                                loop_cnt  <= loop_cnt + 1'b1;
+                                state_num <= base_addr;
+                            end
+                        end else if (ind_in_window) begin
+                            // BG indirect Jump: immediate (matches literal BG Jump).
+                            fsm       <= S_RUN;
+                            state_num <= indirect_data;
                         end else begin
-                            loop_cnt  <= loop_cnt + 1'b1;
-                            state_num <= base_addr;
+                            // FG indirect Jump: latch the target; commit on the
+                            // next presc_tick (may be this very clock).
+                            ind_target   <= indirect_data;
+                            ind_resolved <= 1'b1;
                         end
-                    end else begin
-                        state_num <= indirect_data;  // indirect Jump target
+                    end
+                end else begin
+                    // FG indirect Jump, resolved: wait for the tick to commit.
+                    if (presc_tick) begin
+                        fsm          <= S_RUN;
+                        state_num    <= ind_target;
+                        ind_resolved <= 1'b0;
                     end
                 end
             end
