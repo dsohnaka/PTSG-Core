@@ -91,7 +91,7 @@ This section is the canonical reference. Subsequent sections detail each group; 
 |---|---|---|---|
 | `stack_push_req` | output | 1 | § 5.8 |
 | `stack_pop_req` | output | 1 | § 5.8 |
-| `stack_data` | bidirectional | implementation-defined (typically 24–32) | § 5.8 |
+| `stack_data` | bidirectional | implementation-defined (as-built 41: ins 1 + base 12 + loop 16 + state 12) | § 5.8 |
 | `stack_ack` | input | 1 | § 5.8 |
 
 **Insertion bus (mandatory if external interrupts are used):**
@@ -110,7 +110,7 @@ This section is the canonical reference. Subsequent sections detail each group; 
 
 | Signal | Direction | Width | Reference | Optional? |
 |---|---|---|---|---|
-| `loop_counter` | output | 12 | § 5.10 | Optional (for Formation external-index use) / オプション |
+| `loop_counter` | output | 16 | § 5.10 | Optional (for Formation external-index use) / オプション |
 | `loop_cnt_match` | output | 1 | § 5.10 | Mandatory if Loop is used / Loop が使われるなら必須 |
 | `stay_counter` | output | 12 | § 5.10 | Optional / オプション |
 | `stay_cnt_match` | output | 1 | § 5.10 | Optional / オプション |
@@ -252,9 +252,9 @@ Introduced in Chapter 3 § 3.8.
 
 **`stack_push_req`、`stack_pop_req` — 1 ビットパルス。** それぞれ、コアがプッシュまたはポップする必要がある時、ちょうど 1 クロックアサートされる。それらは相互排他的である ——両方が同じクロックでアサートされることは決してない。
 
-**`stack_data` — bidirectional, implementation-defined width.** During a push: the Core drives `stack_data` with the holding-register contents to be saved; external logic captures it. During a pop: external logic drives `stack_data` with the popped contents; the Core captures it. The width depends on the holding-register data layout (Chapter 3 v1.1 § 3.7), which depends on Tie C3-T7 (insertion flag bit). Typical width 24–32 bits: 12 (State Number) + 12 (loop counter) + a few flag bits.
+**`stack_data` — bidirectional, implementation-defined width.** During a push: the Core drives `stack_data` with the holding-register contents to be saved; external logic captures it. During a pop: external logic drives `stack_data` with the popped contents; the Core captures it. The width depends on the holding-register data layout (Chapter 3 v1.1 § 3.7), which depends on Tie C3-T7 (insertion flag bit). As-built width **41 bits**: insertion flag (1) + base (12) + loop counter (16; C3-V2 rev. 2026-07 / RH009) + State Number (12). (The earlier 24–32 estimate predates the Loop 16-bit ruling; carrying the insertion-flag bit is the C3-T7 lean-(A) layout.)
 
-**`stack_data` — 双方向、実装定義の幅。** プッシュ中: コアは保存される保持レジスタ内容で `stack_data` を駆動する；外部ロジックがそれを捕捉する。ポップ中: 外部ロジックがポップされた内容で `stack_data` を駆動する；コアがそれを捕捉する。幅は保持レジスタデータレイアウト(第3章 v1.1 § 3.7)に依存し、それは Tie C3-T7(挿入フラグビット)に依存する。典型的な幅 24-32 ビット: 12(ステートナンバー) + 12(ループカウンタ) + 数個のフラグビット。
+**`stack_data` — 双方向、実装定義の幅。** プッシュ中: コアは保存される保持レジスタ内容で `stack_data` を駆動する；外部ロジックがそれを捕捉する。ポップ中: 外部ロジックがポップされた内容で `stack_data` を駆動する；コアがそれを捕捉する。幅は保持レジスタデータレイアウト(第3章 v1.1 § 3.7)に依存し、それは Tie C3-T7(挿入フラグビット)に依存する。現行実装幅 **41 ビット**: 挿入フラグ(1) + Base(12) + ループカウンタ(16;C3-V2 改訂 2026-07/RH009) + ステートナンバー(12)。（従来の 24-32 見積もりは Loop 16bit 裁定以前のもの;挿入フラグビットの搭載は C3-T7 の (A) 傾斜レイアウト。）
 
 **`stack_ack` — 1-bit pulse.** Asserted by external logic for one clock when the push or pop operation has completed. Until `stack_ack` is asserted, the Core stalls. This is option (C) variable timing from Chapter 4 § 4.5 applied to the stack bus; it is the contributor's lean (Fixed C5-F2) because external stack memory may be slower than a single clock cycle (e.g., implemented in BRAM with registered output).
 
@@ -296,9 +296,9 @@ The v1.1 deliberation established (C3-F14, C3-F18) that the loop counter and mat
 
 v1.1 協議は(C3-F14、C3-F18)、ループカウンタと一致フラグが外部観察可能な出力であることを確立した。
 
-**`loop_counter[11:0]` — 12-bit, optional output.** Reflects the current value of the single primary loop counter (v1.1 single-counter model, C3-F16). Continuously observable. After auto-clear on loop exit (C3-F17), this output reads 0. A Formation that uses the loop counter as an external index (RAM address, coefficient ROM address, etc.) connects this signal; otherwise it may be left unconnected at the Formation level.
+**`loop_counter[15:0]` — 16-bit, optional output (width revised 2026-07: C3-V2 rev. / RH009).** Reflects the current value of the single primary loop counter (v1.1 single-counter model, C3-F16). Continuously observable. After auto-clear on loop exit (C3-F17), this output reads 0. A Formation that uses the loop counter as an external index (RAM address, coefficient ROM address, etc.) connects this signal; otherwise it may be left unconnected at the Formation level.
 
-**`loop_counter[11:0]` — 12 ビット、オプション出力。** 単一プライマリループカウンタ(v1.1 単一カウンタモデル、C3-F16)の現在値を反映する。連続的に観察可能。ループ脱出時の自動クリア(C3-F17)後、この出力は 0 と読まれる。ループカウンタを外部インデックス(RAM アドレス、係数 ROM アドレス等)として使う Formation はこの信号を接続する；そうでなければ Formation レベルで未接続のまま残し得る。
+**`loop_counter[15:0]` — 16 ビット、オプション出力（2026-07 幅改訂: C3-V2 改訂/RH009）。** 単一プライマリループカウンタ(v1.1 単一カウンタモデル、C3-F16)の現在値を反映する。連続的に観察可能。ループ脱出時の自動クリア(C3-F17)後、この出力は 0 と読まれる。ループカウンタを外部インデックス(RAM アドレス、係数 ROM アドレス等)として使う Formation はこの信号を接続する；そうでなければ Formation レベルで未接続のまま残し得る。
 
 **`loop_cnt_match` — 1-bit pulse, mandatory if Loop is used.** Asserted for **exactly one clock** at the moment the loop counter reaches the target value (i.e., on the loop's exit clock). This is the primary mechanism by which Formation-side external counters or other logic synchronize with the Core's loop iteration boundaries. Per C3-F18.
 
