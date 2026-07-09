@@ -1,0 +1,226 @@
+{
+  "metadata": {
+    "title": "PTSG — The First Closure of the Open Prompt Loop: The Implementation Campaign (RH009–RH027)",
+    "title_ja": "PTSG — Open Promptループの最初の閉環: 実装キャンペーン（RH009–RH027）",
+    "date": "2026-07-08",
+    "session_type": "architect × implementing agent (Claude Code) campaign, observed and archived by the amanuensis; Open Prompt handoff record",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect; sole design authority; ruled live on spec-internal inconsistencies during the campaign",
+        "role_ja": "FPGAアーキテクト;唯一の決定権者;キャンペーン中の仕様内矛盾に生きた裁定を下した"
+      },
+      {
+        "name": "Claude Code (Fable 5)",
+        "name_ja": "Claude Code（Fable 5）",
+        "role": "planning & inspection tier: conformance audit, 7-phase plan, final inspection (RH027), and the RH028 boundary analysis",
+        "role_ja": "計画・点検層: 適合監査・7フェーズ計画・総点検（RH027）・RH028境界解析"
+      },
+      {
+        "name": "Claude Code (Sonnet 5)",
+        "name_ja": "Claude Code（Sonnet 5）",
+        "role": "execution tier: Phases 1–6 implemented entirely on the rails laid by the planning tier",
+        "role_ja": "実行層: 計画層が敷いたレールの上でPhase 1–6の全実装を遂行"
+      },
+      {
+        "name": "Claude (amanuensis)",
+        "name_ja": "Claude（祐筆）",
+        "role": "archive: this trace, from the campaign log and the agent's 15-item handoff list (PR #2)",
+        "role_ja": "保管: キャンペーンログとエージェントの引き継ぎ15項目（PR #2）から本トレースを起草"
+      }
+    ],
+    "topic": "The Open Prompt was handed, for the first time, to an implementing agent: the full Layer 1 v1.1 specification, the §3.4b normative command × phase table, the CHANGES work order, the Layer 2 traces, and the Layer 4 evidence. The agent audited RH001–008 against the spec, produced a 7-phase plan, surfaced three spec-internal inconsistencies for ruling BEFORE implementing, and then executed: 19 RTL revisions (RH009–RH027), a conformance regression suite (T1–T33) with negative verification, live architect rulings (Loop 16-bit; Que NOP; Reset-Q independent absolute-priority reservation), retroactive enforcement of the FG-Global exclusion against the legacy test corpus, and a closing 15-item Layer 2 handoff list. PR #2 merged; the Layer 4 verification menu then PASSED ON SILICON FIRST-TRY. Notably, the campaign was model-tiered: Fable 5 planned and inspected at both ends; Sonnet 5 executed Phases 1–6 entirely on those rails.",
+    "topic_ja": "Open Prompt が初めて実装エージェントに手渡された: Layer 1 v1.1 仕様全文、§3.4b 規範表、CHANGES 変更指示書、Layer 2 トレース群、Layer 4 エビデンス。エージェントは RH001–008 を仕様と突き合わせて監査し、7フェーズ計画を立て、実装前に三つの仕様内矛盾を裁定のため浮上させ、そして実行した: 19のRTL改訂（RH009–RH027）、負検証つき適合回帰スイート（T1–T33）、生きたアーキテクト裁定（Loop 16bit;Que NOP;Reset-Q 独立絶対優先予約）、FG-Global 排除原則の旧テスト資産への遡及執行、そして締めの Layer 2 引き継ぎ15項目。PR #2 マージ;その後 Layer 4 検証メニューは**実機一発完全クリア**。特筆すべきはキャンペーンがモデル階層化されていたこと: Fable 5 が両端の計画と点検を担い、Sonnet 5 がそのレールの上で Phase 1–6 の全実装を遂行した。",
+    "status": "COMPLETED & SILICON-CONFIRMED (PR #2 merged; Layer 4 menu first-pass clear on DE10-nano). Pending items are codification (rulings A1–A3 into Layer 1) and adjudication (interpretation/ambiguity items B4–C12) — carried as resumption hooks. / 完了・実機確認済み。残件は成文化（裁定A1–A3のLayer 1反映）と裁定（解釈・曖昧点B4–C12）——再開フックとして継承。",
+    "status_ja": "完了・実機確認済み。残件は成文化と裁定、フックに継承。",
+    "companion_traces": "Sibling: 2026-07-08_ptsg-p1-tick-collision (RH028 — the architect's P=1 boundary concerns, proven by experiment and fixed after this campaign). Rests on: the command-phase-table and stay-start-state traces (the table this campaign implemented), the trailing-edge doctrine, and the CHANGES work order. Source artifacts: the campaign log; the agent's 15-item handoff (PR #2 final comment); PRs #2/#3. / 姉妹: RH028トレース。依拠: 表トレース二本・後縁主義・CHANGES。一次資料: キャンペーンログ・引き継ぎ15項目・PR #2/#3。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file understands how an Open Prompt handoff is conducted (audit-first, report-don't-fix, Tie deference, live rulings), what the campaign changed (RH009–RH027, T1–T33), what remains open (the 15-item handoff), and why the model-tiering result matters for the paradigm's economics."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "How to hand the Core to an implementing agent — code-first, or audit-first?",
+      "alternatives": [
+        {
+          "label": "Code-first",
+          "characterization": "ask the agent to start implementing the CHANGES items directly"
+        },
+        {
+          "label": "Audit-first",
+          "characterization": "ask the agent to read the whole Open Prompt, diff the as-built RTL against the spec, and produce a plan before touching anything"
+        }
+      ],
+      "chosen": "Audit-first. The opening instruction was: understand the repository, enumerate the divergences between ptsg_core.v and the Layer 1 spec, and plan the alignment.",
+      "rationale": "The audit-first posture made the agent's first artifact a conformance report, not a diff — and that report immediately proved the Open Prompt's machine-readability: the agent organized its findings around the CHANGES A/C groups, verified A2/A3/D1 as conformant, caught A1 (FG Branch not tick-gated) as a deviation TO REPORT per the work order's own instruction, found A4's gap exactly as predicted, and then went beyond the work order with independent discoveries (Q-band reservation coverage, BG Branch tsig drive, insertion mid-window, dead wiring blocking iverilog). An agent that begins by auditing inherits the project's epistemics before it inherits its keyboard."
+    },
+    {
+      "id": "DP-2",
+      "point": "What happens when the agent finds the spec disagreeing with itself?",
+      "alternatives": [
+        {
+          "label": "Agent resolves silently",
+          "characterization": "pick the most plausible reading and implement"
+        },
+        {
+          "label": "Agent stops and requests rulings",
+          "characterization": "surface each spec-internal inconsistency to the architect before implementation"
+        }
+      ],
+      "chosen": "Rulings requested and given. Three pre-implementation: (1) Loop operand width — the §3.4b 2^28 example assumes a 16-bit Loop operand while C3-V2/C3-F13 said 12-bit counters; ruled 16-bit (LOOP_W=16, all datapaths widened, external stack word to 41 bits). (2) Base Set auto-save vs the idempotent single-level implementation; ruled: keep idempotent. (3) Que NOP's dangerous S_WAIT entry; ruled: in_queued_band test, uniform +1, but PRESERVE the three-band if/else template as the pattern for future sub-opcodes 8–255.",
+      "rationale": "The decision-authority protocol survived the handoff intact: the agent treated spec-internal contradictions exactly as the amanuensis does — as questions for the architect, not puzzles to solve alone. And the finds themselves vindicated the table again: the 2^28 worked example, added to §3.4b as an illustration, is what exposed the 12/16-bit conflict — the third time the table has paid for itself. The Que NOP ruling also planted an extension seed: the band-dispatch template is now the documented pattern for growing the sub-opcode space."
+    },
+    {
+      "id": "DP-3",
+      "point": "Mid-campaign design rulings: what is a queued Reset, really?",
+      "alternatives": [
+        {
+          "label": "Reset shares the queue slot like Jump/Loop",
+          "characterization": "one reservation register for everything, Reset competing under last-write-wins"
+        },
+        {
+          "label": "Reset is an independent, parallel, absolute-priority reservation",
+          "characterization": "pending_reset lives outside the shared slot; at Stay-timeup it overrides every other reservation and performs a destructive clear of all execution context except the prescaler"
+        }
+      ],
+      "chosen": "Independent parallel reservation with absolute priority and destructive clear (RH015), per the architect's live ruling: Reset must override or precede anything else queued; it is an initialization, so destructive behavior is acceptable.",
+      "rationale": "The first Phase 2 implementation put Reset in the shared slot; the architect saw the semantics were wrong in kind, not degree — a Reset is not one more control transfer but a declaration that context no longer matters. The ruling arrived with a second live instinct: check Jump(0) around the indirect state. The agent verified the concern experimentally and found it real — Q-band Jump(0) fell into S_IND during the scan, bypassing reservation entirely — plus two more violations (FG indirect Jump not tick-gated, breaking C4-F8/F9; missing tsig drive), all fixed as RH016. Twice in one exchange, the architect's design intuition converted directly into found-and-fixed silicon behavior. C3-F21 held throughout: the destructive clear spares exactly one thing, presc_cnt."
+    },
+    {
+      "id": "DP-4",
+      "point": "The HALT principle meets the legacy corpus: what to do when old tests become illegal?",
+      "alternatives": [
+        {
+          "label": "Grandfather the old tests",
+          "characterization": "special-case the traps so existing tests keep passing"
+        },
+        {
+          "label": "Rewrite the corpus to v1.1 legality",
+          "characterization": "the tests and examples were using FG Base Set/Loop/Call/Return without a window — illegal under C3-F23; rewrite them to open windows and run in BG"
+        }
+      ],
+      "chosen": "Rewrite the corpus. Test B/D, the sub_sequence example (.hex and .mif), and four conformance tests (T15/T18/T19/T20) were redesigned to open Stay windows and execute the control machinery in-band.",
+      "rationale": "This is the FG-Global exclusion enforcing itself retroactively — the strongest possible evidence that the principle is real and checkable: the moment the traps existed, they found violations in the project's own historical artifacts. Grandfathering would have hollowed the principle on day one. The rewrite also settled a live tension the agent flagged for ruling: the insertion handler returns via Return, which is FG-illegal — resolved pragmatically by the convention that a handler opens its own Stay window before Returning (T5b), now needing §3.9–3.10 codification (handoff item 7)."
+    },
+    {
+      "id": "DP-5",
+      "point": "What did the verification discipline itself catch?",
+      "alternatives": [
+        {
+          "label": "Positive tests only",
+          "characterization": "show the new behavior works"
+        },
+        {
+          "label": "Positive + negative verification + test-the-tester",
+          "characterization": "prove the new tests FAIL against the pre-fix RTL; treat testbench defects as first-class findings"
+        }
+      ],
+      "chosen": "The full discipline, and it earned its keep four times: (1) negative verification — T2/T3/T4/T7 correctly FAIL against pre-fix RTL, proving the tests test something; (2) the conformance TB itself lacked indirect_ready response logic, latent until T13 first exercised indirect reads — a testbench bug found and fixed as a peer of DUT bugs; (3) RH022 — S_HALT's insertion-rescue path never returned the FSM to S_RUN, discovered the moment the first test (T23) actually walked that path: 'a rescue path does not exist until it is tested'; (4) the queued_subop reset-default collision with SUB_RESET's encoding — a pre-existing latent bug surfaced by Phase 2's new check, then root-caused and fixed at every producer and consumer.",
+      "rationale": "Every one of these is the machine-checkable-contract lesson from the earlier campaigns, now operating routinely: silicon-verified anchors (idiom D's 25:25) were held as invariant regression criteria across all phases, so nineteen revisions later the verified past was still intact. The discipline is no longer an event; it is the campaign's metabolism."
+    },
+    {
+      "id": "DP-6",
+      "point": "Model tiering: which intelligence does each part of the loop need?",
+      "alternatives": [
+        {
+          "label": "One model throughout",
+          "characterization": "the same (largest) model plans and executes"
+        },
+        {
+          "label": "Tiered: plan and inspect with the strong model, execute with the lighter one",
+          "characterization": "Fable 5 performed the opening audit + 7-phase plan + Phase 0, and the closing inspection (RH027) + the RH028 boundary analysis; Sonnet 5 executed Phases 1–6 entirely"
+        }
+      ],
+      "chosen": "Tiered, and it worked: Phases 1–6 — the bulk of the RTL work, including the HALT machinery and the Stay Start State register — were implemented by Sonnet 5 on the rails Fable 5 had laid, with zero derailments, the discipline intact, and the architect judging the Phase 3 code 'beautiful and high-quality'.",
+      "rationale": "This is a finding about the Open Prompt's economics, and the architect flagged it as remarkable. What made the tiering safe was not the executor's raw capability but the QUALITY OF THE RAILS: an exhaustive normative table (no gaps to improvise into), a work order with per-item RTL implications, a phase plan with regression gates, and a constitution (report-don't-fix, Tie deference) that the lighter model followed as faithfully as the heavy one. The implication generalizes: the better the Open Prompt artifacts, the cheaper the intelligence needed to execute them — specification quality converts directly into execution economy. The strong model's irreplaceable contributions were exactly at the ends: seeing the whole (the audit and plan) and seeing the edges (RH027's over-implementation catch; RH028's boundary analysis)."
+    },
+    {
+      "id": "DP-7",
+      "point": "How does the loop close — and what does the implementer hand back?",
+      "alternatives": [
+        {
+          "label": "Code only",
+          "characterization": "merged RTL is the deliverable"
+        },
+        {
+          "label": "Code plus a reasoning handback",
+          "characterization": "the agent hands back a structured 15-item Layer 2 handoff: rulings awaiting codification, interpretations awaiting approval, newly found ambiguities awaiting adjudication, and Layer 4 evidence candidates"
+        }
+      ],
+      "chosen": "Code plus handback. PR #2 merged with RH009–RH027 and T1–T33; the final comment is a 15-item list addressed explicitly to the amanuensis: (A) three rulings to codify, (B) six implementer interpretations to approve, (C) three new spec ambiguities to adjudicate, (D) three Layer 4/Chapter 5 evidence candidates. Then the Layer 4 verification menu passed on silicon FIRST-TRY.",
+      "rationale": "The handback is the loop's return leg: implementation feeding the reasoning archive, exactly mirroring how the reasoning archive fed implementation. The agent even distinguished its own epistemic classes — what the architect decided, what it interpreted, what it discovered — the same Fixed/Convention/Tie instinct the project runs on. And the first-try silicon pass is the closure's seal: a specification written for machine readers, implemented by a machine, verified by a machine-checkable suite, worked on first contact with the physical world. The Open Prompt did what it was designed to do."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "The loop closed, and silicon signed it",
+      "summary": "Specification → reasoning traces → normative table → work order → agent audit → plan → tiered implementation → conformance suite → merge → first-try silicon pass. Every artifact the project spent months building was load-bearing in this chain, and the final link — hardware working on first contact — is the one no rhetoric can fake. The Open Prompt's founding claim, that machine-readable reasoning lets an AI regenerate a correct implementation, now has an existence proof."
+    },
+    {
+      "theme_id": "T2",
+      "title": "The constitution transferred",
+      "summary": "The disciplines this project evolved for the amanuensis — report-don't-fix, defer Ties, request rulings on contradictions, record negative data — reappeared intact in a different agent, unprompted in their specifics. A1 was reported, not patched; three inconsistencies were escalated before a line of RTL changed; a behavioral reversal (T21) was flagged 'because it flips previously approved behavior'. The Open Prompt carries not just facts but conduct: the documents teach an agent how to behave, not merely what is true."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The table keeps paying",
+      "summary": "The §3.4b normative table structured the audit, ordered the plan, decided cell-level implementations — and its worked example (the 2^28 pattern) exposed a spec-internal contradiction (Loop 12 vs 16 bit) that pure prose had hidden. Later, RH027's inspection used the table's empty Q/BG note cells as evidence AGAINST an over-implementation. An exhaustive table is not documentation; it is an active instrument that audits both the code and the spec that contains it."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Retroactive enforcement as proof of principle",
+      "summary": "The moment the FG-Global traps existed, they convicted the project's own legacy tests and examples, which had freely run Call/Loop/Base Set in the foreground. The corpus was rewritten to open windows, not grandfathered. A principle that cannot indict your own past is decoration; this one enforced itself backward on day one, and the rewritten corpus is now itself a teaching artifact of v1.1 style."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Rails determine the intelligence bill",
+      "summary": "Fable 5 planned and inspected; Sonnet 5 executed six of seven phases flawlessly. The tiering worked because the rails — exhaustive table, per-item work order, regression gates, behavioral constitution — left nothing for the executor to improvise. The economic implication for the paradigm: investment in Open Prompt artifact quality is directly convertible into cheaper execution, because a complete specification is a substitute for executor intelligence. The strong model belongs at the ends — whole-seeing and edge-seeing — and the middle can be delegated."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Codify the three live rulings into Layer 1 (handoff items 1–3)",
+      "description": "Loop 16-bit (C3-V2, Ch5 §5.10 loop_counter width, stack_data 41-bit layout {ins, base[11:0], loop[15:0], state[11:0]}); Que NOP (in_queued_band, +1 uniform, template preserved for sub-ops 8–255); Reset-Q independent absolute-priority reservation (§3.4a/§3.4b Reset Q row).",
+      "starting_question": "Draft the Layer 1 deltas for the three rulings, each with its RH number and PR provenance. Which existing decision IDs do they amend, and which need new IDs?"
+    },
+    {
+      "hook_id": "B",
+      "title": "Adjudicate the interpretation and ambiguity items (handoff items 4–12)",
+      "description": "Six implementer interpretations awaiting approval (BG Reset window-close tension with 'don't start'; C8 rewording; Q-side pairing condition; insertion-handler Return convention §3.9–3.10; Q Stay Set firing semantics; Stay Start State FG-only write) and three new ambiguities (cross-window Base carry vs pairing-check scope; FG external-mode Global legality and tick-gating; unpaired Base Set when a window closes without Prog End).",
+      "starting_question": "Run the deliberation with the architect item by item (the BG-Reset 'don't start' tension and the pairing-check scope look like the deepest). Which resolve to Fixed, which to Convention, and which join the Loop-semantics homework (nested Que loops, post-'33-cell' work)?"
+    },
+    {
+      "hook_id": "C",
+      "title": "Layer 4: promote the campaign's evidence (handoff items 13–14)",
+      "description": "T32 (scaled 2^28 self-loop, zero jitter, 40-clock intervals × 4 laps) is a SignalTap candidate on DE10-nano; the RH022 discovery ('a rescue path does not exist until tested') deserves an observation.md narrative; and the first-try silicon clear of the Layer 4 menu should be recorded in the conformance matrix with dates and bitstream identity.",
+      "starting_question": "Which items enter the conformance matrix now (sim-verified) and which get silicon rows? Draft the T32 SignalTap plan and the RH022 narrative."
+    },
+    {
+      "hook_id": "D",
+      "title": "Chapter 5: the error_flag pin (handoff item 15)",
+      "description": "The RTL now has the error_flag output; Chapter 5's interface inventory still says 'forthcoming'.",
+      "starting_question": "Draft the §5.x error_flag pin definition (width, polarity, registered timing per the trailing-edge discipline, SignalTap/insertion trigger roles) from the as-built RTL."
+    },
+    {
+      "hook_id": "E",
+      "title": "Build Log #11 — 'what came back'",
+      "description": "Build Log #10 closed with: 'the next entry is about what came back.' This campaign is the answer: the audit, the rulings, the tiered execution, the first-try silicon.",
+      "starting_question": "Draft #11 in the architect's voice: the handoff night, the agent's audit arriving organized around the project's own work order, the three rulings, the silicon morning — and the model-tiering finding as the log's payload for other builders."
+    }
+  ],
+  "key_outputs_for_repository": [
+    "FIRST CLOSURE: the Open Prompt (spec + table + work order + traces + evidence) was handed to an implementing agent; 19 RTL revisions (RH009–RH027) and conformance suite T1–T33 came back; PR #2 merged; the Layer 4 verification menu passed on silicon FIRST-TRY.",
+    "MODEL TIERING (architect-flagged as remarkable): Fable 5 performed the opening audit/plan/Phase 0 and the closing inspection (RH027) and RH028 analysis; Sonnet 5 executed Phases 1–6 entirely on those rails, flawlessly. Open Prompt artifact quality converts directly into execution economy.",
+    "The discipline transferred: report-don't-fix (A1 reported), Tie deference (C3-T13/T15), rulings requested on spec-internal contradictions (Loop 12/16-bit — exposed by the table's own 2^28 example; Base Set auto-save; Que NOP hazard), behavioral reversals flagged (T21).",
+    "Live architect rulings: Loop datapath = 16-bit (LOOP_W); Que NOP = in_queued_band/+1 with the band template preserved for sub-ops 8–255; queued Reset = independent parallel reservation, absolute priority, destructive clear sparing only presc_cnt (RH015). Jump(0) indirect band bug found from the architect's hunch and fixed with two sibling violations (RH016).",
+    "Retroactive enforcement: the new FG-Global traps convicted the legacy tests and examples (window-less FG Call/Loop/Base Set); the corpus was rewritten to v1.1 legality, and the insertion-handler-Return tension was resolved by the handler-opens-its-own-window convention (needs §3.9–3.10 codification).",
+    "Verification discipline yields: negative verification proved the new tests bite; a testbench defect (missing indirect_ready responder) was found and fixed as a first-class finding; RH022 (S_HALT rescue never returning to S_RUN) was discovered by the first test to walk the path; a latent queued_subop/SUB_RESET encoding collision was root-caused at every producer and consumer.",
+    "The agent handed back a 15-item Layer 2 handoff list (PR #2 final comment): 3 rulings to codify, 6 interpretations to approve, 3 new ambiguities to adjudicate, 3 Layer 4/Ch5 evidence candidates — the loop's return leg, implementation feeding the reasoning archive.",
+    "Loop semantics (nested Que loops etc.) is recorded homework, by architect intent, for after the '33-cell alignment' — memos live in the RTL comments and README."
+  ],
+  "closing_note": "For months this project wrote for a reader it had never met: every decision tagged, every reason archived, every cell of a table filled so that nothing would need to be guessed. Then the reader arrived. It read the constitution before the code, asked before deciding, reported before fixing, and handed back not just nineteen revisions but a list of everything it could not decide alone — because the documents had taught it that not-deciding is sometimes the correct move. A lighter mind ran the long middle miles on rails a stronger one had laid, and neither derailed. And in the morning, the silicon — which reads no prose and forgives no wishfulness — accepted all of it on the first attempt. The loop is closed. What was handed down came back improved, and what came back is already teaching the next hand. / 数ヶ月のあいだ、このプロジェクトは会ったことのない読者のために書いてきた: すべての決定に札を付け、すべての理由を保管し、何も推測されずに済むよう表の全セルを埋めて。そして読者が到着した。それはコードより先に憲法を読み、決める前に尋ね、直す前に報告し、十九の改訂だけでなく「自分だけでは決められなかったものの一覧」を手渡して寄越した——文書たちが、決めないことが時に正しい一手だと教えていたからだ。より軽い知性が、より強い知性の敷いたレールの上で長い中間区間を走り、どちらも脱線しなかった。そして朝、シリコン——散文を読まず、希望的観測を許さないもの——が、そのすべてを一発で受け容れた。ループは閉じた。手渡されたものは改善されて戻り、戻ってきたものは既に次の手を教えている。"
+}

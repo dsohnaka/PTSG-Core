@@ -1,0 +1,181 @@
+{
+  "metadata": {
+    "title": "PTSG — The P=1 Tick-Collision Discipline (RH028): A Hidden Premise, Proven by Experiment, Fixed to the Smallest Scale",
+    "title_ja": "PTSG — P=1 tick衝突規律（RH028）: 暗黙の前提を実験で炙り出し、最小スケールまで正す",
+    "date": "2026-07-08",
+    "session_type": "architect boundary-condition review × implementing agent (Claude Code, Fable 5) experimental verification; post-campaign correction",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect; raised both concerns from code reading; proposed fix ① verbatim; approved the two design judgments",
+        "role_ja": "FPGAアーキテクト;コード精読から両懸念を提起;修正①を原文どおり提案;二つの設計判断を承認"
+      },
+      {
+        "name": "Claude Code (Fable 5)",
+        "name_ja": "Claude Code（Fable 5）",
+        "role": "built five scratchpad experiments proving both concerns real (and one broader), designed and verified the three-part fix, PR #3",
+        "role_ja": "5本の実験で両懸念（＋一般化）を実証、3点修正を設計・検証、PR #3"
+      },
+      {
+        "name": "Claude (amanuensis)",
+        "name_ja": "Claude（祐筆）",
+        "role": "archive: this trace, from the campaign log",
+        "role_ja": "保管: キャンペーンログから本トレースを起草"
+      }
+    ],
+    "topic": "After the campaign merged and silicon passed first-try, the architect, reading the code, raised two concerns rooted in one hidden premise: the design had tacitly assumed Stay Set never coincides with a prescaler tick — but at PRESCALE=1 every clock IS a tick. Concern ①: FG Stay Set's arm (stay_cnt<=0) would swallow a coincident tick, breaking count discipline. Concern ②: the minimal Stay — prescaler 1 / Stay 1, deliberately important to timing design — might be unrealizable; and windowed/queued Stay transitions coinciding with ticks might drop counts. The agent proved both by experiment (EXP1–5) and found the failure broader than P=1: any over-constrained window (BG scan longer than the Stay value) ran away past the == deadline into a 2^13-wrap lockout. The three-part fix (RH028, PR #3, merged): ① tick-priority increment at FG Stay Set (the architect's proposed code verbatim, semantically grounded in the §3.4b table: FG Stay Set's tick column reads 'Ignored' — an unconsumed coincident tick counts as tick #1 of the new count; symmetric with BG re-kick's 'Consumes', whose gating tick is not counted); ② duplicate-tick accounting on the Stay-execute clock, plus SAME-CLOCK timeup for the bare Stay whose deadline is that very tick — making bare Stay-1@P=1 exactly one clock, the same as an FG NOP; ③ the S_WAIT deadline test relaxed from == to >=, so an over-constrained program fires at the earliest feasible tick instead of wrapping. Silicon-verified anchors (25:25 etc.) unchanged; sim-verified via T34 and new P=1 functional tests; silicon confirmation pending.",
+    "topic_ja": "キャンペーンのマージと実機一発クリアの後、アーキテクトがコード精読から、一つの暗黙前提に根ざす二つの懸念を提起した: 設計は「Stay Set はプリスケーラティックと重ならない」と暗黙に仮定していた——だが PRESCALE=1 では全クロックがティックである。懸念①: FG Stay Set のアーム（stay_cnt<=0）が重複ティックを飲み込み、カウント規律が破れる。懸念②: 最小の Stay——プリスケーラ1/Stay1、タイミング設計上意図的に重要——が実現不能かもしれない;また窓/Que 経由の Stay 遷移がティックと重なった時のカウント落ち。エージェントは実験（EXP1–5）で両方を実証し、故障が P=1 より広いことを発見した: 過制約窓（BGスキャン＞Stay値）はどのプリスケールでも == 締切を通過して 2^13 ラップの暴走に陥る。3点修正（RH028、PR #3、マージ済み）: ① FG Stay Set のティック優先インクリメント（アーキテクト提案コードを原文どおり;§3.4b 表に意味論的根拠——FG Stay Set のティック欄は『Ignored』=消費されない重複ティックは新カウントの tick #1 として数える;BG re-kick の『Consumes』と対称で、ゲートティックは数えない）;② Stay 実行クロックの重複ティック計上＋締切がまさにそのティックである裸 Stay の**同クロック timeup**——裸 Stay-1@P=1 が FG NOP と同じ正確に1クロックに;③ S_WAIT 締切判定を == から >= へ——過制約プログラムは実現可能最早のティックで発火しラップしない。実機検証済みアンカー（25:25等）は不変;T34 と新規 P=1 機能テストでシム検証済み;実機確認は今後。",
+    "status": "ADOPTED & MERGED (PR #3); simulation-verified (T34, P=1 functional tests F1/F2/G1/G2); silicon confirmation of RH028 itself pending (the first-try silicon clear preceded this fix). / 採択・マージ済み;シム検証済み;RH028自体の実機確認は今後（実機一発クリアは本修正の前）。",
+    "status_ja": "採択・マージ済み。シム検証済み、実機確認は今後。",
+    "companion_traces": "Sibling: 2026-07-08_ptsg-open-prompt-first-closure (the campaign this corrects the boundary of). Grounds its semantics in: 2026-07-06_ptsg-command-phase-table (the Ignored/Consumes cells). Extends: the trailing-edge doctrine to the P=1 degenerate grid. / 姉妹: 閉環トレース。意味論的根拠: 表トレース。後縁主義を P=1 の退化グリッドへ延長。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file understands the tick-collision rules at every band, why bare Stay-1@P=1 is exactly one clock, why the deadline test is >=, and the windowed structural lower bound (N ≥ scan length + 1 at P=1)."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "A hidden premise surfaces: 'Stay Set never coincides with a tick'",
+      "alternatives": [
+        {
+          "label": "Treat P=1 as a degenerate configuration out of scope",
+          "characterization": "document that PRESCALE≥2 is assumed"
+        },
+        {
+          "label": "Treat the collision as a first-class case the discipline must define",
+          "characterization": "at P=1 every clock is a tick, so Stay Set ALWAYS collides; the count discipline must say which action wins"
+        }
+      ],
+      "chosen": "First-class. The architect: at P=1 the collision is not an edge case but the permanent condition; the arm-vs-increment priority must be defined, and he proposed the code: if (presc_tick) stay_cnt <= stay_cnt + 1; else stay_cnt <= 0.",
+      "rationale": "The premise was invisible at P=5 because collisions were rare and masked; P=1 makes the premise false on every clock. The architect's instinct — that increment must take priority over the arm on a coincident tick, or 'the Stay-count discipline is not preserved' — came from reading the code, before any simulation. Excluding P=1 was never seriously entertained: the minimal configurations are exactly where a timing core earns its keep."
+    },
+    {
+      "id": "DP-2",
+      "point": "Argue from the code, or prove by experiment first?",
+      "alternatives": [
+        {
+          "label": "Analytic argument",
+          "characterization": "reason about the RTL and patch"
+        },
+        {
+          "label": "Experiment first",
+          "characterization": "build scratchpad benches that make the current RTL fail measurably, then verify the patch against the same benches"
+        }
+      ],
+      "chosen": "Experiment first: five benches (EXP1–5) run against merged main and against the candidate patch, with a numeric before/after table. EXP1: windowed Stay-1@P=1 — current RTL runs away (stay_cnt=59 at 60 clocks, == deadline already passed, unrecoverable until a 2^13 wrap); patched: recovers in 3 clocks. EXP2/3: bare NOP+Stay-N+Jump periods at P=1 — one clock too long in current RTL; exact (N+2) in patched. EXP4: idiom-D duty at P=1 — 6:6 current, 5:5 patched (the written value). EXP5: over-constrained window at P=5 — runs away in current RTL too.",
+      "rationale": "EXP5 is the finding that repaid the method: the runaway's root cause (a deadline tick passing before S_WAIT is reached defeats an == test forever) is NOT P=1-specific — any window whose BG scan outlasts its Stay value falls into the same pit at any prescale. An analytic patch for the reported concern would likely have missed the generalization; the experimental posture converted the architect's worry into a broader theorem about the deadline test itself. 'The concern was made real before it was made fixed.'"
+    },
+    {
+      "id": "DP-3",
+      "point": "The fix — and where its meaning comes from",
+      "alternatives": [
+        {
+          "label": "Patch the symptom sites ad hoc",
+          "characterization": "special-case P=1 where failures appeared"
+        },
+        {
+          "label": "A three-part discipline grounded in the normative table",
+          "characterization": "① FG Stay Set: tick-priority increment (architect's code verbatim); ② duplicate-tick accounting on the Stay-execute clock + same-clock timeup for the bare Stay whose deadline is that tick; ③ deadline test == → >="
+        }
+      ],
+      "chosen": "The three-part discipline. The semantic ground for ① was found in the §3.4b table itself: FG Stay Set's Prescaler-Tick cell reads 'Ignored' — the command does not consume the tick — so a coincident tick is unconsumed and must count, as tick #1 of the newly-armed count. Symmetrically, BG re-kick's cell reads 'Consumes one tick': its gating tick IS consumed by the Stay Set and is therefore not counted — which makes BG re-kick → Stay-N exact for N≥2 at P=1, verified by trace.",
+      "rationale": "That the fix's justification could be READ OFF the table — Ignored means count it, Consumes means don't — is the table functioning as a semantic arbiter for a case nobody had in mind when the cells were filled. The window-transition half of concern ② turned out to be already covered by the campaign's A4 hoist (window_open && presc_tick counts on every in-window clock), a reassurance worth recording: a rule hoisted for generality quietly handled a boundary its authors had not yet imagined."
+    },
+    {
+      "id": "DP-4",
+      "point": "Two design judgments: over-constraint severity, and the windowed lower bound",
+      "alternatives": [
+        {
+          "label": "Over-constrained window = program error → HALT (C3-F24 style)",
+          "characterization": "a deadline that passed before S_WAIT is a structural violation; stop and flag"
+        },
+        {
+          "label": "Over-constrained window = earliest feasible firing (>= test)",
+          "characterization": "fire at the first S_WAIT tick; exact programs are unaffected (== and >= coincide)"
+        }
+      ],
+      "chosen": "Earliest feasible firing — because Stay-1@P=1 MUST work: with any window at P=1 the deadline is structurally in the past by the time S_WAIT is reached, so a HALT policy would outlaw the minimal timing the architect explicitly requires. Second judgment: the windowed structural lower bound is ACCEPTED — a windowed Stay at P=1 is exact for N ≥ scan length + 1 and fires earliest below that; making it exact for smaller N would require duplicating the entire window-close/queue-fire machinery onto the Stay-execute clock. The bare (window-less) Stay, by contrast, gets the full same-clock treatment (4 safe lines: no window, queue, or Reset reservation can exist there).",
+      "rationale": "Severity policy is chosen by intended use, not by formal purity: the same past-deadline signature that means 'runaway' in a broken program means 'as fast as possible, please' in the minimal-timing idiom, and the architecture serves the idiom. The asymmetry between bare and windowed Stay is a cost-honest boundary: pay four lines where exactness is cheap; document a floor where exactness would cost a mechanism duplication. Both judgments were put to the architect and approved as 'extremely reasonable'."
+    },
+    {
+      "id": "DP-5",
+      "point": "What was achieved — the philosophy at minimal scale",
+      "alternatives": [
+        {
+          "label": "P=1 works, approximately",
+          "characterization": "off-by-one tolerated at the smallest configuration"
+        },
+        {
+          "label": "Bare Stay-1@P=1 = exactly one clock",
+          "characterization": "the minimal Stay is the exact peer of an FG NOP; NOP+Stay-2+Jump = exactly 4 clocks; idiom-D duty at P=1 = exactly the written 5:5"
+        }
+      ],
+      "chosen": "Exactness. After RH028, the written count equals the clocks on the wire down to the smallest expressible program at the smallest prescale.",
+      "rationale": "'The foreground is a bare enumeration of Stay durations' was the FG-exclusion principle's promise; RH028 makes the promise hold at the scale where it is hardest and most valuable — single clocks. This is the communication/video-synchronization-grade rigor the trailing-edge doctrine was written for, now proven at the degenerate grid where boundary and clock coincide. Regression: all silicon-verified anchors (T1 25:25, T2 30:30, T32 self-loop) unchanged, since == and >= are equivalent for exact programs; Test A's blink count rising 15→19 is the honest fingerprint of bare Stays becoming exactly as long as written. Status: sim-verified (T34; new P=1 functional tests F1/F2/G1/G2); RH028's own silicon confirmation is pending — the campaign's first-try clear predates this fix."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "Hidden premises live at parameter extremes",
+      "summary": "'Stay Set never meets a tick' was never written anywhere — it existed only as the absence of a defined priority, invisible at P=5 and false on every clock at P=1. Parameter extremes are premise detectors: setting the prescaler to 1 collapses the grid until every tacit assumption about 'between ticks' has nowhere to hide. A timing architecture is not verified until its degenerate configurations have been made to speak."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Make it real before making it fixed",
+      "summary": "Five experiments turned two worries into five numbers — and one generalization (EXP5: the runaway is any over-constrained window at any prescale, not a P=1 quirk). The experimental posture did what analysis alone likely would not: it converted a reported symptom into a theorem about the deadline test itself, and it left behind reusable benches that now guard the boundary forever."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The table as semantic arbiter",
+      "summary": "The justification for tick-priority increment was not invented; it was read off the normative table: FG Stay Set 'Ignored' (unconsumed tick → counts as tick #1) versus BG re-kick 'Consumes' (gating tick → not counted). Cells filled months earlier, for other reasons, adjudicated a boundary case their author had not imagined. This is what an exhaustive normative artifact is FOR: it answers questions that were not asked when it was written."
+    },
+    {
+      "theme_id": "T4",
+      "title": "Severity is chosen by intended use",
+      "summary": "The same signature — a deadline already past — could mean 'runaway program, HALT' or 'fire as early as feasible'. The architecture chose earliest-firing because the minimal-timing idiom (Stay-1@P=1) is a first-class requirement, and a HALT policy would outlaw it. This calibrates the error philosophy from the table trace: HALT is for violations whose consequences chain invisibly; a past deadline in a wait is a local, self-announcing condition best served by graceful earliest service."
+    },
+    {
+      "theme_id": "T5",
+      "title": "Exactness down to one clock",
+      "summary": "After RH028, the smallest program at the smallest prescale keeps its promise: Stay-1 is one clock, the duty written is the duty produced. The 'bare enumeration of Stay durations' philosophy now holds at every scale from 2^28 self-loops down to a single clock — and the one honest regression (a blinky blinking more, because its waits got exactly as short as written) is the measurement of how much slack the hidden premise had been costing."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Silicon confirmation of RH028",
+      "description": "The campaign's first-try silicon clear predates this fix; RH028 itself (bare Stay-1@P=1, >= deadline, over-constrained recovery) is sim-verified only.",
+      "starting_question": "Add a P=1 program to the DE10-nano verification menu (bare NOP+Stay-1+Jump period; over-constrained-window recovery) and SignalTap the stay_cnt/presc_tick collision clocks. Does silicon match EXP1–4's patched columns?"
+    },
+    {
+      "hook_id": "B",
+      "title": "Write the tick-collision discipline back into §3.4b / Chapter 4",
+      "description": "The Ignored/Consumes symmetry, the same-clock bare-Stay timeup, the >= deadline, and the windowed lower bound (N ≥ scan length + 1 at P=1) are RTL-real but not yet spec text.",
+      "starting_question": "Draft the Layer 1 deltas: a §3.4b note on tick-coincidence semantics per band, the bare-vs-windowed Stay exactness statement, and the over-constraint earliest-firing rule (with the rejected HALT alternative recorded)."
+    },
+    {
+      "hook_id": "C",
+      "title": "Conformance-matrix entries for the boundary",
+      "description": "T34 (P=5 over-constrained window) and the P=1 functional tests F1/F2/G1/G2 guard the boundary in simulation; the matrix should show them, marked sim-verified pending silicon.",
+      "starting_question": "Add the matrix rows with their EXP provenance and the silicon-pending status; which existing verification-queue items do they extend?"
+    },
+    {
+      "hook_id": "D",
+      "title": "Document the windowed lower bound for programmers",
+      "description": "A windowed Stay at P=1 is exact for N ≥ scan length + 1; below that it fires earliest. Programmers of minimal-timing idioms need this floor stated where they will see it.",
+      "starting_question": "Where does the floor belong — §3.4b notes, the Chapter 4 prescaler chapter, or a programming-idioms appendix — and what is the worked example (StaySet→Stay-N: exact for N≥3)?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "RH028 (PR #3, merged): the P=1 tick-collision discipline. ① FG Stay Set arm yields to a coincident tick (if presc_tick: stay_cnt++ else stay_cnt<=0 — the architect's code verbatim); ② duplicate-tick accounting on the Stay-execute clock + same-clock timeup for the bare Stay whose deadline is that tick; ③ S_WAIT deadline test == → >= (earliest feasible firing; exact programs unaffected).",
+    "SEMANTIC GROUND: read off the §3.4b table — FG Stay Set's tick cell 'Ignored' means the unconsumed coincident tick counts as tick #1 of the new count; BG re-kick's 'Consumes' means its gating tick is not counted (BG re-kick → Stay-N exact for N≥2 at P=1).",
+    "GENERALIZATION (EXP5): the runaway (deadline tick passing before S_WAIT defeats an == test until a 2^13 wrap) afflicts ANY over-constrained window at ANY prescale — not P=1 only. The >= test retires the whole class.",
+    "ACHIEVED: bare Stay-1@P=1 = exactly one clock (peer of FG NOP); NOP+Stay-2+Jump = exactly 4 clocks; idiom-D duty at P=1 = the written 5:5. The 'bare enumeration of Stay durations' philosophy holds at minimal scale.",
+    "DESIGN JUDGMENTS (architect-approved): over-constraint = earliest feasible firing, NOT HALT (Stay-1@P=1 must work; a past deadline in a wait is local and self-announcing, unlike the chaining violations HALT exists for); windowed Stay's structural lower bound accepted (exact for N ≥ scan length + 1 at P=1) rather than duplicating the window-close machinery.",
+    "Window-transition tick coincidence (concern ②'s in-window half) was already covered by the campaign's A4 hoist — a generality dividend, recorded.",
+    "Verification: EXP1–5 before/after table; T34 + P=1 functional tests F1/F2/G1/G2; all silicon-verified anchors unchanged (== ≡ >= for exact programs); Test A's blink 15→19 = bare Stays now exactly as written. RH028 silicon confirmation pending."
+  ],
+  "closing_note": "Every discipline has a smallest case, and the smallest case is where it either holds or was never real. The prescaler set to one strips the grid of all its room: every clock is a tick, every arm collides, every tacit 'between' disappears. The architect looked there on purpose — because a timing core that cannot say what one clock means has not yet said anything — and the code, put to experiment, confessed. Now the confession is a rule read off a table, a four-line exactness, and a wait that ends the moment it should even when it was asked too late. Stay-1 is one clock. The smallest sentence in the language finally means exactly what it says. / どの規律にも最小のケースがあり、最小のケースこそ、規律が成り立つか、初めから実在しなかったかの分かれ目である。プリスケーラを1に据えるとグリッドから全ての余地が剥がれる: 全クロックがティックであり、全アームが衝突し、暗黙の「あいだ」がすべて消える。アーキテクトは意図してそこを見た——1クロックの意味を言えないタイミングコアは、まだ何も言っていないからだ——そして実験にかけられたコードは、白状した。いまやその自白は、表から読み取られた規則となり、四行の正確さとなり、頼むのが遅すぎた時でさえ然るべき瞬間に終わる待機となった。Stay-1 は1クロックである。この言語の最小の文が、ついに書いてあるとおりのことを意味する。"
+}
