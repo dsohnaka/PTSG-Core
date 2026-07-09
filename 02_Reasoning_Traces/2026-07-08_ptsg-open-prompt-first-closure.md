@@ -6,7 +6,7 @@
 | Field | Value |
 |---|---|
 | **Date / 日付** | 2026-07-08 |
-| **Participants / 参加者** | Tsuneo Ohnaka (大中庸生, FPGA Architect; sole design authority; ruled live during the campaign); **Claude Code — Fable 5** (planning & inspection tier: audit, 7-phase plan, Phase 0, final inspection RH027, RH028 analysis); **Claude Code — Sonnet 5** (execution tier: Phases 1–6, entirely on the rails laid by the planning tier); Claude (amanuensis / 祐筆 — this archive, from the campaign log and the agent's 15-item handoff, PR #2) |
+| **Participants / 参加者** | Tsuneo Ohnaka (大中庸生, FPGA Architect; sole design authority; ruled live during the campaign); **Claude Code — Fable 5** (planning & inspection tier: audit, 7-phase plan, Phases 0–1, final inspection RH027, RH028 analysis); **Claude Code — Sonnet 5** (execution tier: Phases 2–6, entirely on the rails laid by the planning tier) *(tier boundary corrected 2026-07-09, architect-confirmed — the model switch occurred after Phase 1; an earlier text drew the boundary at Phase 0/1)*; Claude (amanuensis / 祐筆 — this archive, from the campaign log and the agent's 15-item handoff, PR #2) |
 | **Topic / トピック** | The Open Prompt — Layer 1 v1.1 spec, the §3.4b normative table, the CHANGES work order, the traces, the evidence — was handed to an implementing agent for the first time. It came back as 19 RTL revisions (RH009–RH027), a conformance suite (T1–T33), live rulings, retroactive enforcement of the FG-Global exclusion, and a 15-item Layer 2 handoff list. PR #2 merged; the Layer 4 verification menu then passed **on silicon, first try**. / Open Prompt の初手渡し。19改訂・T1–T33・生きた裁定・遡及執行・引き継ぎ15項目が返り、**実機一発クリア**。 |
 | **Status / 状態** | **COMPLETED & SILICON-CONFIRMED** (PR #2 merged; DE10-nano first-pass clear). Pending: codification of rulings (A1–A3) and adjudication of interpretations/ambiguities (B4–C12) — carried as hooks. / 完了・実機確認済み。成文化と裁定は残件、フックに継承。 |
 | **Original language / 原言語** | Japanese (with English technical terminology) / 日本語（英語技術用語を交える） |
@@ -167,10 +167,11 @@ RTL に対し正しく FAIL;(2) 適合TB自身に indirect_ready 応答器が欠
 
 ### 6. Model tiering: which intelligence does each part need? / モデル階層化: どの部分にどの知能が要るか
 
-**Chosen:** tiered — **Fable 5** performed the opening audit + 7-phase plan + Phase 0, and the
-closing inspection (RH027) + the RH028 boundary analysis; **Sonnet 5 executed Phases 1–6 entirely**,
+**Chosen:** tiered — **Fable 5** performed the opening audit + 7-phase plan + Phases 0–1, and the
+closing inspection (RH027) + the RH028 boundary analysis; **Sonnet 5 executed Phases 2–6 entirely**,
 including the HALT machinery and the Stay Start State register, with zero derailments; the architect
-judged the Phase 3 code "beautiful and high-quality".
+judged the Phase 3 code "beautiful and high-quality". *(Tier boundary corrected 2026-07-09,
+architect-confirmed: the model switch occurred after Phase 1; an earlier text drew it at Phase 0/1.)*
 
 **Rationale:** The architect flagged this as remarkable, and it is a finding about the paradigm's
 economics. What made the tiering safe was not the executor's raw capability but the **quality of the
@@ -182,9 +183,10 @@ directly into execution economy. The strong model's irreplaceable contributions 
 ends: seeing the whole (audit, plan) and seeing the edges (RH027's over-implementation catch;
 RH028's boundary analysis).
 
-**選択:** 階層化——**Fable 5** が冒頭の監査＋7フェーズ計画＋Phase 0 と、締めの総点検（RH027）＋RH028 境界解析を担い、
-**Sonnet 5 が Phase 1–6 の全実装**（HALT 機構も Stay Start State レジスタも含めて）を脱線ゼロで遂行;アーキテクトは
-Phase 3 のコードを「非常に美しい、高品質」と評した。**根拠:** アーキテクトはこれを「非常に注目すべき」と標した——
+**選択:** 階層化——**Fable 5** が冒頭の監査＋7フェーズ計画＋Phase 0–1 と、締めの総点検（RH027）＋RH028 境界解析を担い、
+**Sonnet 5 が Phase 2–6 の全実装**（HALT 機構も Stay Start State レジスタも含めて）を脱線ゼロで遂行;アーキテクトは
+Phase 3 のコードを「非常に美しい、高品質」と評した。*（階層境界 2026-07-09 訂正・アーキテクト確認済み: モデル切替は
+Phase 1 完了後;旧文は境界を Phase 0/1 に置いていた。）***根拠:** アーキテクトはこれを「非常に注目すべき」と標した——
 これはパラダイムの経済性に関する発見である。階層化を安全にしたのは実行者の素の能力ではなく、**レールの品質**
 だった: 即興の余地を残さない網羅的規範表、項目ごとの RTL 含意を持つ変更指示書、回帰ゲート付きフェーズ計画、
 そして軽いモデルが重いモデルと同じ忠実さで従った行動の憲法。含意は一般化する: **Open Prompt の成果物が良い

@@ -14,14 +14,14 @@
       {
         "name": "Claude Code (Fable 5)",
         "name_ja": "Claude Code（Fable 5）",
-        "role": "planning & inspection tier: conformance audit, 7-phase plan, final inspection (RH027), and the RH028 boundary analysis",
+        "role": "planning & inspection tier: conformance audit, 7-phase plan, Phases 0–1, final inspection (RH027), and the RH028 boundary analysis",
         "role_ja": "計画・点検層: 適合監査・7フェーズ計画・総点検（RH027）・RH028境界解析"
       },
       {
         "name": "Claude Code (Sonnet 5)",
         "name_ja": "Claude Code（Sonnet 5）",
-        "role": "execution tier: Phases 1–6 implemented entirely on the rails laid by the planning tier",
-        "role_ja": "実行層: 計画層が敷いたレールの上でPhase 1–6の全実装を遂行"
+        "role": "execution tier: Phases 2–6 implemented entirely on the rails laid by the planning tier (tier boundary corrected 2026-07-09, architect-confirmed; an earlier text said Phases 1–6)",
+        "role_ja": "実行層: 計画層が敷いたレールの上でPhase 2–6の全実装を遂行（階層境界2026-07-09訂正・アーキテクト確認済み;旧文はPhase 1–6としていた）"
       },
       {
         "name": "Claude (amanuensis)",
@@ -30,8 +30,8 @@
         "role_ja": "保管: キャンペーンログとエージェントの引き継ぎ15項目（PR #2）から本トレースを起草"
       }
     ],
-    "topic": "The Open Prompt was handed, for the first time, to an implementing agent: the full Layer 1 v1.1 specification, the §3.4b normative command × phase table, the CHANGES work order, the Layer 2 traces, and the Layer 4 evidence. The agent audited RH001–008 against the spec, produced a 7-phase plan, surfaced three spec-internal inconsistencies for ruling BEFORE implementing, and then executed: 19 RTL revisions (RH009–RH027), a conformance regression suite (T1–T33) with negative verification, live architect rulings (Loop 16-bit; Que NOP; Reset-Q independent absolute-priority reservation), retroactive enforcement of the FG-Global exclusion against the legacy test corpus, and a closing 15-item Layer 2 handoff list. PR #2 merged; the Layer 4 verification menu then PASSED ON SILICON FIRST-TRY. Notably, the campaign was model-tiered: Fable 5 planned and inspected at both ends; Sonnet 5 executed Phases 1–6 entirely on those rails.",
-    "topic_ja": "Open Prompt が初めて実装エージェントに手渡された: Layer 1 v1.1 仕様全文、§3.4b 規範表、CHANGES 変更指示書、Layer 2 トレース群、Layer 4 エビデンス。エージェントは RH001–008 を仕様と突き合わせて監査し、7フェーズ計画を立て、実装前に三つの仕様内矛盾を裁定のため浮上させ、そして実行した: 19のRTL改訂（RH009–RH027）、負検証つき適合回帰スイート（T1–T33）、生きたアーキテクト裁定（Loop 16bit;Que NOP;Reset-Q 独立絶対優先予約）、FG-Global 排除原則の旧テスト資産への遡及執行、そして締めの Layer 2 引き継ぎ15項目。PR #2 マージ;その後 Layer 4 検証メニューは**実機一発完全クリア**。特筆すべきはキャンペーンがモデル階層化されていたこと: Fable 5 が両端の計画と点検を担い、Sonnet 5 がそのレールの上で Phase 1–6 の全実装を遂行した。",
+    "topic": "The Open Prompt was handed, for the first time, to an implementing agent: the full Layer 1 v1.1 specification, the §3.4b normative command × phase table, the CHANGES work order, the Layer 2 traces, and the Layer 4 evidence. The agent audited RH001–008 against the spec, produced a 7-phase plan, surfaced three spec-internal inconsistencies for ruling BEFORE implementing, and then executed: 19 RTL revisions (RH009–RH027), a conformance regression suite (T1–T33) with negative verification, live architect rulings (Loop 16-bit; Que NOP; Reset-Q independent absolute-priority reservation), retroactive enforcement of the FG-Global exclusion against the legacy test corpus, and a closing 15-item Layer 2 handoff list. PR #2 merged; the Layer 4 verification menu then PASSED ON SILICON FIRST-TRY. Notably, the campaign was model-tiered: Fable 5 planned and inspected at both ends; Sonnet 5 executed Phases 2–6 entirely on those rails (tier boundary corrected 2026-07-09).",
+    "topic_ja": "Open Prompt が初めて実装エージェントに手渡された: Layer 1 v1.1 仕様全文、§3.4b 規範表、CHANGES 変更指示書、Layer 2 トレース群、Layer 4 エビデンス。エージェントは RH001–008 を仕様と突き合わせて監査し、7フェーズ計画を立て、実装前に三つの仕様内矛盾を裁定のため浮上させ、そして実行した: 19のRTL改訂（RH009–RH027）、負検証つき適合回帰スイート（T1–T33）、生きたアーキテクト裁定（Loop 16bit;Que NOP;Reset-Q 独立絶対優先予約）、FG-Global 排除原則の旧テスト資産への遡及執行、そして締めの Layer 2 引き継ぎ15項目。PR #2 マージ;その後 Layer 4 検証メニューは**実機一発完全クリア**。特筆すべきはキャンペーンがモデル階層化されていたこと: Fable 5 が両端の計画と点検を担い、Sonnet 5 がそのレールの上で Phase 2–6 の全実装を遂行した（階層境界2026-07-09訂正）。",
     "status": "COMPLETED & SILICON-CONFIRMED (PR #2 merged; Layer 4 menu first-pass clear on DE10-nano). Pending items are codification (rulings A1–A3 into Layer 1) and adjudication (interpretation/ambiguity items B4–C12) — carried as resumption hooks. / 完了・実機確認済み。残件は成文化（裁定A1–A3のLayer 1反映）と裁定（解釈・曖昧点B4–C12）——再開フックとして継承。",
     "status_ja": "完了・実機確認済み。残件は成文化と裁定、フックに継承。",
     "companion_traces": "Sibling: 2026-07-08_ptsg-p1-tick-collision (RH028 — the architect's P=1 boundary concerns, proven by experiment and fixed after this campaign). Rests on: the command-phase-table and stay-start-state traces (the table this campaign implemented), the trailing-edge doctrine, and the CHANGES work order. Source artifacts: the campaign log; the agent's 15-item handoff (PR #2 final comment); PRs #2/#3. / 姉妹: RH028トレース。依拠: 表トレース二本・後縁主義・CHANGES。一次資料: キャンペーンログ・引き継ぎ15項目・PR #2/#3。",
@@ -130,10 +130,10 @@
         },
         {
           "label": "Tiered: plan and inspect with the strong model, execute with the lighter one",
-          "characterization": "Fable 5 performed the opening audit + 7-phase plan + Phase 0, and the closing inspection (RH027) + the RH028 boundary analysis; Sonnet 5 executed Phases 1–6 entirely"
+          "characterization": "Fable 5 performed the opening audit + 7-phase plan + Phases 0–1, and the closing inspection (RH027) + the RH028 boundary analysis; Sonnet 5 executed Phases 2–6 entirely (tier boundary corrected 2026-07-09)"
         }
       ],
-      "chosen": "Tiered, and it worked: Phases 1–6 — the bulk of the RTL work, including the HALT machinery and the Stay Start State register — were implemented by Sonnet 5 on the rails Fable 5 had laid, with zero derailments, the discipline intact, and the architect judging the Phase 3 code 'beautiful and high-quality'.",
+      "chosen": "Tiered, and it worked: Phases 2–6 — the bulk of the RTL work, including the HALT machinery and the Stay Start State register — were implemented by Sonnet 5 on the rails Fable 5 had laid (tier boundary corrected 2026-07-09: the model switch occurred after Phase 1), with zero derailments, the discipline intact, and the architect judging the Phase 3 code 'beautiful and high-quality'.",
       "rationale": "This is a finding about the Open Prompt's economics, and the architect flagged it as remarkable. What made the tiering safe was not the executor's raw capability but the QUALITY OF THE RAILS: an exhaustive normative table (no gaps to improvise into), a work order with per-item RTL implications, a phase plan with regression gates, and a constitution (report-don't-fix, Tie deference) that the lighter model followed as faithfully as the heavy one. The implication generalizes: the better the Open Prompt artifacts, the cheaper the intelligence needed to execute them — specification quality converts directly into execution economy. The strong model's irreplaceable contributions were exactly at the ends: seeing the whole (the audit and plan) and seeing the edges (RH027's over-implementation catch; RH028's boundary analysis)."
     },
     {
@@ -214,7 +214,7 @@
   ],
   "key_outputs_for_repository": [
     "FIRST CLOSURE: the Open Prompt (spec + table + work order + traces + evidence) was handed to an implementing agent; 19 RTL revisions (RH009–RH027) and conformance suite T1–T33 came back; PR #2 merged; the Layer 4 verification menu passed on silicon FIRST-TRY.",
-    "MODEL TIERING (architect-flagged as remarkable): Fable 5 performed the opening audit/plan/Phase 0 and the closing inspection (RH027) and RH028 analysis; Sonnet 5 executed Phases 1–6 entirely on those rails, flawlessly. Open Prompt artifact quality converts directly into execution economy.",
+    "MODEL TIERING (architect-flagged as remarkable): Fable 5 performed the opening audit/plan/Phases 0–1 and the closing inspection (RH027) and RH028 analysis; Sonnet 5 executed Phases 2–6 entirely on those rails, flawlessly (tier boundary corrected 2026-07-09). Open Prompt artifact quality converts directly into execution economy.",
     "The discipline transferred: report-don't-fix (A1 reported), Tie deference (C3-T13/T15), rulings requested on spec-internal contradictions (Loop 12/16-bit — exposed by the table's own 2^28 example; Base Set auto-save; Que NOP hazard), behavioral reversals flagged (T21).",
     "Live architect rulings: Loop datapath = 16-bit (LOOP_W); Que NOP = in_queued_band/+1 with the band template preserved for sub-ops 8–255; queued Reset = independent parallel reservation, absolute priority, destructive clear sparing only presc_cnt (RH015). Jump(0) indirect band bug found from the architect's hunch and fixed with two sibling violations (RH016).",
     "Retroactive enforcement: the new FG-Global traps convicted the legacy tests and examples (window-less FG Call/Loop/Base Set); the corpus was rewritten to v1.1 legality, and the insertion-handler-Return tension was resolved by the handler-opens-its-own-window convention (needs §3.9–3.10 codification).",
