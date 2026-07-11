@@ -165,6 +165,12 @@ VCD はテキストでよく圧縮される——gzip は典型的に元の 15-2
 コミット;GTKWave は `.gz` を透過的に開き、AI も容易に解凍する。(FST はさらに小さいが VCD の
 クロスツール汎用性を犠牲にする;gzip-VCD が選ばれた均衡点。)
 
+### Video evidence / 動画エビデンス
+
+Public demonstration videos (the live-improvisation series) are produced as **log-side storytelling, outside this layer** — but each demonstration's plan, frozen predictions, and results ARE Layer 4 material. The rule (ruled 2026-07-10): the video file itself is not committed; its `observation.md` records the **YouTube URL, the local master filename, the commit hash, the bitstream checksum, and the filming date**. Predictions are frozen before filming and never edited afterward. The video is auxiliary evidence, peer to a screenshot; where a scope/SignalTap capture of the same run exists, that capture remains the primary record.
+
+公開実演動画(インプロビゼーション実演シリーズ)は**本層の外の、ログ側の演出**として制作される——ただし各実演の計画・凍結済み予言・結果は Layer 4 の資料である。規則(2026-07-10 裁定): 動画ファイル自体はコミットしない;その `observation.md` に **YouTube URL・ローカル原本ファイル名・コミットハッシュ・ビットストリームチェックサム・撮影日**を記録する。予言は撮影前に凍結し、以後編集しない。動画はスクリーンショットと同格の補助エビデンスであり、同一ランのオシロ/SignalTap キャプチャが存在する場合はそちらが一次記録である。
+
 ### External storage: Zenodo / 外部保管: Zenodo
 
 Large or long raw captures are deposited to **Zenodo**, which assigns a **DOI** — making
