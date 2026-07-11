@@ -20,7 +20,7 @@ The Architectural Specification layer contains the **mathematics, constraints, a
 
 ---
 
-## Planned chapter structure / 予定される章構成
+## Chapter structure / 章構成
 
 The Layer 1 specification is being drafted in chapters. The planned structure is:
 
@@ -69,8 +69,8 @@ When multiple PTSG cores coexist on the same FPGA, what synchronization primitiv
 *Documents in this layer are accumulated over time. The list below reflects the current state and will grow.*
 *この層の文書は時間とともに蓄積される。以下のリストは現状を反映しており、拡張されていく。*
 
-- 🔄 **Chapter 1** — in preparation / 準備中
-- ⏳ Chapter 2 through Chapter 6 — to come / 第2章〜第6章 — 予定
+- ✅ **Chapters 1–5** — complete at **v1.1**; silicon-verified 2026-07; the normative command × phase table lives in Chapter 3 §3.4b / **第1〜5章** — **v1.1** 完備;2026-07 実機検証済み;規範のコマンド×フェーズ表は第3章 §3.4b
+- ⏳ **Chapter 6** — accumulates as multi-PTSG applications develop / **第6章** — 複数PTSG応用の発展とともに蓄積
 
 The Hackaday.io [PTSG project page](https://hackaday.io/project/205720-ptsg-programmable-timing-sequence-generator) serves as initial high-level documentation while these formal chapters are being drafted.
 
