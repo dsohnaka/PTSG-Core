@@ -44,13 +44,19 @@ A reader who replays one of these dialogues with their own language model collab
 | `2026-05-XX_ptsg-strategic-positioning.md/.json` | 2026-05-XX | The dialogue in which PTSG's role as an AI-era processor architecture proposal crystallized. Covers: three-layer engagement model (write/design/read), Webapp simulator vision for AI agent integration, additive-synth-as-launching-point strategy, Core-Formation separation pattern, the "is code compatibility important?" question, two-tier repository model. | Tsuneo Ohnaka × Claude (Anthropic, Claude Opus 4.7, launch session) | Single-AI / inaugural / strategic |
 | `2026-05-XX_ptsg-birth-from-wpms-session.md/.json` | 2026-04-30 〜 2026-05-XX | The dialogue within the WPMS Layer 1 specification work where PTSG was recognized as an independent primitive, was named, and was spun off from FPGA Spectrum Engine to its own project. | Tsuneo Ohnaka × Claude (Anthropic, Claude Opus 4.7, WPMS session) | Single-AI / inaugural / technical-birth |
 
-*(Filenames to be finalized on publication. Dates pending.)*
-*(ファイル名は公開時に確定。日付未定。)*
+*(Inaugural-era description, retained as history. The inventory has since grown through the v1.1 specification-consolidation and 2026-07 implementation-campaign traces; the directory listing is the authoritative inventory. Traces are Markdown + JSON pairs, dated `YYYY-MM-DD_slug`.)*
+*(開所期の記述を歴史として残置。以後、v1.1 仕様統合と 2026-07 実装キャンペーンの軌跡群が加わっており、ディレクトリ一覧が正式な目録である。軌跡は Markdown＋JSON のペア、`YYYY-MM-DD_slug` 命名。)*
 
 ### Contributed traces / 貢献された軌跡
 
 *Place your contributed traces in the `contributed/[your-name]/` subdirectory. See the root `CONTRIBUTING.md` for the contribution procedure.*
 *貢献された軌跡は `contributed/[あなたの名前]/` サブディレクトリに置いてください。貢献手順についてはルートの `CONTRIBUTING.md` を参照。*
+
+### Worksheets / 作業物
+
+`_worksheets/` holds non-normative working artifacts produced during deliberations — e.g. the publication Excel rendering of the Chapter 3 §3.4b command × phase table and its bilingual draft. The underscore prefix marks them as outside the md+json trace format; each worksheet's canon lives in Layer 1. See `_worksheets/README.md` for the inventory.
+
+`_worksheets/` は協議中に生まれた非規範の作業物——例: 第3章 §3.4b コマンド×フェーズ表の公開用 Excel 整形版とその日英たたき台——を収める。アンダースコア接頭辞は md＋json 軌跡形式の外にあることを示す;各作業物の正典は Layer 1 にある。目録は `_worksheets/README.md` を参照。
 
 ---
 
