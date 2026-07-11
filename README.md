@@ -1,10 +1,10 @@
 # Programmable Sequencer Architecture for FPGA
 ## PTSG Core — Open Prompt Repository
 
-> **A compact instruction-driven control core for FPGA — 4 opcodes, 16 timing signals, JTAG-reprogrammable, ~200 LE.**
+> **A compact instruction-driven control core for FPGA — 4 opcodes, 16 timing signals, JTAG-reprogrammable, ~235 LE + 2 M10K — specified, implemented, and silicon-verified first-try on a Cyclone V (DE10-nano, 50 MHz).**
 > Released as the second reference implementation of **Open Prompt**, and the first to extend it with the **Core-Formation separation pattern**.
 >
-> **FPGA用の極小命令駆動制御コア — 4オペコード、16タイミング信号、JTAG再プログラム可能、約200LE。**
+> **FPGA用の極小命令駆動制御コア — 4オペコード、16タイミング信号、JTAG再プログラム可能、約235LE＋M10K×2——仕様化・実装・実機一発検証済み（Cyclone V / DE10-nano、50 MHz）。**
 > **Open Prompt**の二番目のリファレンス実装として、また**コア-フォーメーション分離パターン**でそれを拡張する最初のものとして公開。
 
 ---
@@ -32,7 +32,19 @@ For LLMs that can fetch URLs directly, the raw links to key files are:
 
 URLを直接取得できるLLM向けの主要ファイル生リンク:
 
-*URLs will be added on repository launch / リポジトリ公開時にURL追加予定*
+**Layer 1 chapters / 第1層各章:**
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter1_Scope_and_Design_Philosophy.md
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter2_Memory_Layout_and_Opcode_Set.md
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter3_SubOpcode_and_Background_Execution.md
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter4_Indirect_Addressing_and_Prescaler.md
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter5_External_Logic_Interface.md
+
+**Key entry points / 主要導線:**
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/CHANGES_Layer1_v1.1_for_ClaudeCode.md — implementation work order / 実装変更指示書
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/03_Sample_Implementations/ptsg_core_verilog/ptsg_core.v — as-built core / 現行実装
+- https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/04_Verification_Evidence/conformance_matrix.md — verification status / 検証状況
+
+**Suggested reading order for AI agents / AIエージェント向け推奨読了順:** Chapter 1 (design philosophy, the trailing-edge principle §1.4a) → Chapter 3 §3.4b (the normative 11-command × 3-phase table — the canon of command semantics) → CHANGES (the work order that drove the 2026-07 implementation campaign) → the RTL → the conformance matrix.
 
 ---
 
@@ -42,9 +54,9 @@ This is the **Core** repository of the PTSG ecosystem. It defines the PTSG instr
 
 これはPTSGエコシステムの**コア**リポジトリである。PTSGの命令セット、メモリレイアウト、サブオペコードアーキテクチャ、外部インターフェース契約を定義する——しかし、特定応用の外部レジスタ、Conditionロジック、ワークメモリは**指定しない**。それらは、本コアの上に特定応用領域のために構築される**フォーメーション**リポジトリの責任である。
 
-This repository is distributed under the **Open Prompt** paradigm — a three-layer scheme that places architectural knowledge and reasoning traces in the public commons, while sample implementations are released as illustrative reference points. For the full Open Prompt declaration, see Build Log #4 of [FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine), the parent project from which PTSG was spun off.
+This repository is distributed under the **Open Prompt** paradigm — a four-layer scheme that places architectural knowledge, reasoning traces, and hardware verification evidence in the public commons, while sample implementations are released as illustrative reference points. For the full Open Prompt declaration, see Build Log #4 of [FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine), the parent project from which PTSG was spun off.
 
-本リポジトリは**Open Prompt**パラダイムのもとで配布される——アーキテクチャ知識と推論軌跡を共有財産に置き、サンプル実装は例示的なリファレンスポイントとして公開する三層構造。完全なOpen Prompt宣言については、PTSGが暖簾分けされた親プロジェクト[FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine)のBuild Log #4を参照してください。
+本リポジトリは**Open Prompt**パラダイムのもとで配布される——アーキテクチャ知識・推論軌跡・ハードウェア検証エビデンスを共有財産に置き、サンプル実装は例示的なリファレンスポイントとして公開する四層構造。完全なOpen Prompt宣言については、PTSGが暖簾分けされた親プロジェクト[FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine)のBuild Log #4を参照してください。
 
 ---
 
@@ -82,7 +94,7 @@ PTSG ecosystem / PTSGエコシステム
 
 ---
 
-## Three-layer structure (within this Core repository) / 三層構造（本コアリポジトリ内）
+## Four-layer structure (within this Core repository) / 四層構造（本コアリポジトリ内）
 
 ```
 Programmable_Sequencer_Architecture_for_FPGA/
@@ -96,7 +108,10 @@ Programmable_Sequencer_Architecture_for_FPGA/
 ├── 03_Sample_Implementations/       ← Layer 3: Reference code (author-licensed)
 │                                       第3層: リファレンス実装（著者ライセンス）
 │
-├── LICENSE_OpenPrompt.md            ← License declarations for all three layers
+├── 04_Verification_Evidence/        ← Layer 4: Hardware verification evidence (commons)
+│                                       第4層: ハードウェア検証エビデンス（共有財産）
+│
+├── LICENSE_OpenPrompt.md            ← License declarations for all four layers
 ├── CONTRIBUTING.md                  ← How others can contribute
 └── README.md                        ← This file
 ```
@@ -118,6 +133,12 @@ PTSGコア仕様に至った実際の設計対話。**パブリックドメイ�
 Verilog/VHDL skeletons of the PTSG Core, instruction list examples, testbenches. **Released under permissive open-source licenses** (see `03_Sample_Implementations/README.md`). These are illustrative, not normative — one possible implementation, not the implementation.
 
 PTSGコアのVerilog/VHDLスケルトン、命令列例、テストベンチ。**寛容なオープンソースライセンスで公開**（`03_Sample_Implementations/README.md`参照）。これらは例示的であり規範的ではない——一つの可能な実装であり、唯一の実装ではない。
+
+### Layer 4 — Hardware Verification Evidence / ハードウェア検証エビデンス
+
+Established June 2026 as the fourth layer: the evidence that the specification and the silicon agree. VCD captures are the primary format (text-based, git-diffable, citable by AI agents); every capture is accompanied by a mandatory `observation.md` verdict document; the living `conformance_matrix.md` tracks every claim's verification status, negative results included. Demonstration videos (YouTube) are registered here by URL, local master filename, commit hash, and bitstream checksum — auxiliary evidence, like screenshots. **Public domain (CC0).**
+
+2026年6月、第四の層として確立: 仕様とシリコンが一致していることの証拠。VCD が一次形式（テキスト・git 差分可能・AI エージェントが引用可能）であり、全キャプチャに判決文書 `observation.md` を必須で伴う。生きた `conformance_matrix.md` が全主張の検証状態を負の結果も含めて追跡する。実演動画（YouTube）は URL・ローカル原本ファイル名・コミットハッシュ・ビットストリームチェックサムで登録される——スクリーンショットと同格の補助エビデンス。**パブリックドメイン (CC0)。**
 
 ---
 
@@ -175,20 +196,20 @@ Contributions to Layer 1 (clarifications, additional reasoning, translations) an
 
 ## Status / 現状
 
-This repository is in the **launch phase**. The Core specification has reached an initial stable form. Layer 1 initial content is in preparation. Layer 2 inaugural traces are being drafted.
+**v1.1 — specified, implemented, silicon-verified.** The Layer 1 specification stands at v1.1 across Chapters 1–5, anchored by the trailing-edge principle (§1.4a) and the normative 11-command × 3-phase behavior table (§3.4b, 33 cells). The as-built core (revision RH028) passed a 34-test conformance suite in simulation, and the full v1.1 verification menu passed **first-try on silicon** (DE10-nano, 2026-07).
 
-このリポジトリは**ローンチ段階**にある。コア仕様は初期の安定形に達した。Layer 1初期コンテンツは準備中。Layer 2の最初のトレースは起草中。
+**v1.1——仕様化・実装・実機検証済み。** Layer 1 仕様は第1〜5章にわたり v1.1。後縁主義(§1.4a)と規範的な11コマンド×3フェーズ挙動表(§3.4b、33セル)を正典とする。現行コア(改訂 RH028)はシミュレーションで34本の適合スイートを通過し、v1.1 検証メニューは**実機一発クリア**(DE10-nano、2026-07)。
 
 **Current contents / 現在の内容：**
-- ✅ Repository structure established / リポジトリ構造の確立
-- 🔄 Layer 1 Chapter 1 (Scope and Design Philosophy) / 第1層第1章（スコープと設計哲学） — in preparation
-- 🔄 Layer 2 inaugural traces / 第2層の最初のトレース — in preparation
-- ⏳ Layer 3 sample implementations / 第3層サンプル実装 — to come
-- ⏳ Subsequent Layer 1 chapters / 後続のLayer 1章 — to come
+- ✅ Layer 1 — Chapters 1–5 complete at v1.1; decision register with Fixed/Convention/Tie status / 第1〜5章 v1.1 完備;Fixed/Convention/Tie 地位つき決定台帳
+- ✅ Layer 2 — reasoning traces through the 2026-07 implementation campaign, as Markdown + JSON pairs / 2026-07 実装キャンペーンまでの推論軌跡(Markdown＋JSON ペア)
+- ✅ Layer 3 — as-built Verilog core (RH028), instruction-list examples, AI-friendly vendor wrappers, DE10-nano harness / 現行 Verilog コア(RH028)、命令列例、AI 親和ベンダラッパー、DE10-nano ハーネス
+- ✅ Layer 4 — conformance matrix + suite (T1–T34), silicon evidence; live-demonstration video series in preparation / 適合マトリクス＋スイート(T1–T34)、実機エビデンス;実演動画シリーズ準備中
+- ⏳ Chapter 6 (multi-PTSG coordination), WPMS Formation / 第6章(複数PTSG協調)、WPMSフォーメーション
 
-This is a living repository. All three layers will accumulate over time as the PTSG ecosystem develops.
+This is a living repository. All four layers accumulate over time as the PTSG ecosystem develops.
 
-これは生きたリポジトリである。PTSGエコシステムの発展とともに、三層すべてが時間とともに蓄積されていく。
+これは生きたリポジトリである。PTSGエコシステムの発展とともに、四層すべてが時間とともに蓄積されていく。
 
 ---
 

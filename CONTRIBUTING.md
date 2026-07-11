@@ -1,8 +1,8 @@
 # Contributing / 貢献について
 
-Contributions to this repository are welcome — but the contribution model differs from a conventional open-source project. This is an Open Prompt repository, and the rules reflect its three-layer structure plus the Core-Formation separation pattern that PTSG introduces.
+Contributions to this repository are welcome — but the contribution model differs from a conventional open-source project. This is an Open Prompt repository, and the rules reflect its four-layer structure plus the Core-Formation separation pattern that PTSG introduces.
 
-このリポジトリへの貢献を歓迎します——ただし、貢献モデルは従来のオープンソースプロジェクトとは異なります。これはOpen Promptリポジトリであり、ルールはその3層構造に加えてPTSGが導入するコア-フォーメーション分離パターンを反映しています。
+このリポジトリへの貢献を歓迎します——ただし、貢献モデルは従来のオープンソースプロジェクトとは異なります。これはOpen Promptリポジトリであり、ルールはその4層構造に加えてPTSGが導入するコア-フォーメーション分離パターンを反映しています。
 
 ---
 
@@ -38,6 +38,12 @@ Direct contributions to the *original author's* sample implementations are accep
 *オリジナル著者の*サンプル実装への直接貢献は、事前議論（まず Issue を開いてください）を経た場合のみ受け入れられます。理由：第3層はオリジナル著者のリファレンス実装です。これがコミュニティでマージされたコードベースに徐々になることは望ましくありません——なぜなら、それは**再生成された実装は独立した著作物であり派生物ではない**というOpen Promptの原理を曖昧にしてしまうからです。
 
 **If you have built your own PTSG Core implementation from this architecture**, the recommended path is **not** to merge it here, but to publish your own Open Prompt repository and link to it from a discussion thread.
+
+### Layer 4 (Verification Evidence) — Welcome / 第4層（検証エビデンス）— 歓迎
+
+- **Conformance evidence for this Core's reference implementation** — VCD captures, `observation.md` verdicts, and run scripts for tests you have executed against `03_Sample_Implementations/` — is welcome under `04_Verification_Evidence/contributed/[your-name]/`. Include the commit hash, tool names/versions, and (for silicon runs) the board and bitstream checksum. Released as CC0 by submission; authorship preserved in the observation metadata. / **本コアのリファレンス実装に対する適合エビデンス**——実行したテストの VCD、`observation.md` 判決、実行スクリプト——を `04_Verification_Evidence/contributed/[あなたの名前]/` に歓迎します。コミットハッシュ、ツール名/バージョン、（実機の場合）ボードとビットストリームチェックサムを含めてください。提出により CC0;著者性は observation メタデータに保持されます。
+- **Negative results are first-class evidence** here — a FAIL with a good observation.md is more valuable than an undocumented PASS. / **負の結果はここでは一級のエビデンス**です——良い observation.md を伴う FAIL は、文書化されない PASS より価値があります。
+- Evidence for **your own regenerated implementation** belongs in **your own repository** (mirroring the Layer 3 principle). / **あなた自身の再生成実装**のエビデンスは**あなた自身のリポジトリ**へ（第3層の原理と同じ）。
 
 **本アーキテクチャから自身のPTSGコア実装を構築した場合**、推奨される経路は、ここにマージすることでは**なく**、自身のOpen Promptリポジトリを公開し、議論スレッドからリンクすることです。
 
