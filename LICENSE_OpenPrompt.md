@@ -74,6 +74,7 @@ Open Promptの構造的革新は、有能な言語モデルの時代において
 | 2 | Reasoning traces | CC0 (public domain) | No one / everyone |
 | 3 | Sample implementations | MIT (or as specified) | The author of each artifact |
 | 3 (regenerated) | Other engineers' implementations | At each engineer's discretion | The regenerating engineer |
+| 4 | Hardware verification evidence | CC0 (public domain) | No one / everyone |
 
 For the full philosophical declaration, see Build Log #4 of [FPGA Spectrum Engine](https://hackaday.io/project/205582-fpga-spectrum-engine), the parent project from which PTSG was spun off.
 
@@ -87,7 +88,7 @@ To adopt Open Prompt for another project:
 
 他のプロジェクトでOpen Promptを採用するには：
 
-1. **Structure your repository** in the three-layer template (or a clearly-derived variant, such as the Core-Formation pattern). / リポジトリを3層テンプレート（またはコア-フォーメーションパターンのような明確に派生した変種）に従って構造化する
+1. **Structure your repository** in the three- or four-layer template (or a clearly-derived variant, such as the Core-Formation pattern). / リポジトリを3層または4層テンプレート（またはコア-フォーメーションパターンのような明確に派生した変種）に従って構造化する
 2. **Place Layer 1 and Layer 2 in the public domain** via CC0 1.0. / 第1層と第2層を CC0 1.0 によりパブリックドメインに置く
 3. **License Layer 3 as you choose.** Permissive licenses are recommended. / 第3層を任意のライセンスにする。寛容なライセンスを推奨
 4. **Include an Open Prompt declaration** in your repository — referencing this file or providing your own equivalent. / リポジトリにOpen Prompt宣言を含める——本ファイルへの参照、または自身の同等宣言で
