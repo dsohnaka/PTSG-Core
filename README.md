@@ -1,10 +1,10 @@
 # Programmable Sequencer Architecture for FPGA
 ## PTSG Core — Open Prompt Repository
 
-> **A compact instruction-driven control core for FPGA — 4 opcodes, 16 timing signals, JTAG-reprogrammable, ~235 LE + 2 M10K — specified, implemented, and silicon-verified first-try on a Cyclone V (DE10-nano, 50 MHz).**
+> **A compact instruction-driven control core for FPGA — 4 opcodes, 16 timing signals, JTAG-reprogrammable, ~400 ALMs + 2 M10K in full v1.1 trim (585 combinational ALUTs core proper; ~440 ALMs including the ISMCE live-edit port) — error HALT, queued-band machinery, and the 16-bit loop datapath included, at about 1% of a DE10-nano's Cyclone V. Specified, implemented, and silicon-verified first-try (50 MHz).**
 > Released as the second reference implementation of **Open Prompt**, and the first to extend it with the **Core-Formation separation pattern**.
 >
-> **FPGA用の極小命令駆動制御コア — 4オペコード、16タイミング信号、JTAG再プログラム可能、約235LE＋M10K×2——仕様化・実装・実機一発検証済み（Cyclone V / DE10-nano、50 MHz）。**
+> **FPGA用の極小命令駆動制御コア — 4オペコード、16タイミング信号、JTAG再プログラム可能、完全装備の v1.1 で約400 ALM＋M10K×2（コア本体585組合せALUT;ISMCE生編集ポート込みで約440 ALM）——error HALT・Que帯域機構・16bitループデータパスを含んで、DE10-nano の Cyclone V の約1%。仕様化・実装・実機一発検証済み（50 MHz）。**
 > **Open Prompt**の二番目のリファレンス実装として、また**コア-フォーメーション分離パターン**でそれを拡張する最初のものとして公開。
 
 ---
