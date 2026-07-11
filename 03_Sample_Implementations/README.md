@@ -65,6 +65,8 @@ Provenance and the full verification story are documented in the Build Logs (#5 
 
 来歴と検証の全容は Build Log(#5 実装、#6 実機ブリングアップ)と対応する Layer 2 軌跡に文書化されている。
 
+**2026-07 update / 2026-07 追記:** The core RTL now stands at **RH028**, v1.1-conformant (FG-Global exclusion traps, S_HALT + `error_flag`, queued-band rulings, LOOP_W=16, P=1 tick-collision discipline), with conformance suite **T1–T34**; the full v1.1 verification menu passed **first-try on silicon** (DE10-nano, 2026-07). / コア RTL は現在 **RH028**、v1.1 準拠(FG-Global 排除トラップ、S_HALT＋`error_flag`、Que 帯域裁定群、LOOP_W=16、P=1 tick 衝突規律)、適合スイート **T1–T34**。v1.1 検証メニューは**実機一発クリア**(DE10-nano、2026-07)。
+
 ### Instruction list examples / 命令列例
 
 - `blinky_with_prescaler` — The "moved-on-from-counter-Lチカ" reference: a prescaled LED blink. **Silicon-verified.** / 「カウンタLチカからの卒業」リファレンス: プリスケール LED 点滅。**実機検証済み。**
