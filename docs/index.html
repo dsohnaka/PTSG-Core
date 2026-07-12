@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTSG — Programmable Timing Sequence Generator</title>
+<meta name="description" content="A timing sequencer you reprogram like a music box — specified for humans and AI alike, proven on silicon. An Open Prompt repository.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#101418;
+    --bg-panel:#151a20;
+    --bg-panel2:#0c1014;
+    --grid:rgba(140,180,190,.08);
+    --ink:#dfe6e3;
+    --ink-dim:#9aa8a4;
+    --ink-faint:#6b7a76;
+    --green:#4ce08c;
+    --green-dim:rgba(76,224,140,.35);
+    --amber:#e8b04a;
+    --red:#e85149;
+    --line:rgba(160,200,200,.14);
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'IBM Plex Sans',system-ui,'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background-color:var(--bg);
+    background-image:
+      linear-gradient(var(--grid) 1px,transparent 1px),
+      linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:48px 48px;
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--green);text-decoration:none}
+  a:hover{color:#7dedb0;text-decoration:underline}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+  .ja{display:block;color:var(--ink-dim);font-size:.86em;margin-top:.35em;line-height:1.8}
+  .mono{font-family:var(--mono)}
+
+  /* ---------- square-wave divider ---------- */
+  .divider{display:block;width:100%;height:36px;margin:72px 0 56px;overflow:visible}
+  .divider path{stroke:var(--green-dim);stroke-width:2;fill:none}
+
+  /* ---------- hero ---------- */
+  header{padding:88px 0 0}
+  .kicker{font-family:var(--mono);font-size:13px;letter-spacing:.18em;color:var(--green);text-transform:uppercase}
+  h1{font-size:clamp(30px,5.4vw,52px);line-height:1.15;font-weight:700;margin:14px 0 6px;letter-spacing:-.01em}
+  h1 .sub{display:block;font-size:clamp(17px,2.4vw,24px);font-weight:500;color:var(--ink-dim);margin-top:6px;letter-spacing:0}
+  .oneliner{font-size:clamp(16px,2vw,19px);max-width:760px;margin:26px 0 0}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:32px 0 0}
+  .chip{font-family:var(--mono);font-size:13.5px;color:var(--green);border:1px solid var(--green-dim);padding:6px 14px;border-radius:3px;background:rgba(76,224,140,.05);white-space:nowrap}
+  .cta{display:flex;flex-wrap:wrap;gap:14px;margin:34px 0 0}
+  .btn{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:15px;font-weight:500;padding:13px 24px;border-radius:3px;border:1px solid var(--green);color:var(--green)}
+  .btn:hover{background:rgba(76,224,140,.1);text-decoration:none;color:#7dedb0}
+  .btn.primary{background:var(--green);color:#0b1510}
+  .btn.primary:hover{background:#63e79c;color:#0b1510}
+
+  /* hero waveform */
+  .scope{margin:56px 0 0;border:1px solid var(--line);background:var(--bg-panel2);border-radius:4px;padding:28px 24px 18px;position:relative;overflow:hidden}
+  .scope-label{position:absolute;top:10px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink-faint);text-transform:uppercase}
+  .scope svg{display:block;width:100%;height:auto}
+  .trace-clk{stroke:var(--amber);stroke-width:2;fill:none;opacity:.85}
+  .trace-out{stroke:var(--green);stroke-width:2.5;fill:none;stroke-dasharray:1200;stroke-dashoffset:0;animation:sweep 9s linear infinite}
+  @keyframes sweep{from{stroke-dashoffset:2400}to{stroke-dashoffset:0}}
+  @media (prefers-reduced-motion:reduce){.trace-out{animation:none}}
+  .trace-tag{font-family:var(--mono);font-size:12px;fill:var(--ink-faint)}
+
+  /* ---------- sections ---------- */
+  section h2{font-size:clamp(22px,3.2vw,30px);font-weight:600;line-height:1.3;letter-spacing:-.01em}
+  section h2 .ja{font-size:.62em;font-weight:500}
+  .sec-num{font-family:var(--mono);font-size:13px;color:var(--green);letter-spacing:.16em;margin-bottom:10px;display:block}
+
+  /* pillars */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:36px}
+  .pillar{border:1px solid var(--line);background:var(--bg-panel);border-radius:4px;padding:26px 22px}
+  .pillar svg{display:block;height:56px;width:auto;margin-bottom:18px}
+  .pillar h3{font-size:18px;font-weight:600;line-height:1.4}
+  .pillar h3 .ja{font-size:.82em}
+  .pillar-sub{margin-top:34px;max-width:820px;font-size:16.5px}
+  .pillar-sub .op{font-family:var(--mono);color:var(--amber)}
+
+  /* layers */
+  .layers{display:flex;flex-direction:column;gap:0;margin-top:36px;counter-reset:layer}
+  .layer{display:grid;grid-template-columns:64px 1fr auto;gap:18px;align-items:center;border:1px solid var(--line);background:var(--bg-panel);padding:20px 22px;position:relative}
+  .layer + .layer{margin-top:-1px}
+  .layer:nth-child(1){border-left:3px solid var(--green)}
+  .layer:nth-child(2){border-left:3px solid rgba(76,224,140,.6)}
+  .layer:nth-child(3){border-left:3px solid var(--amber)}
+  .layer:nth-child(4){border-left:3px solid rgba(76,224,140,.6)}
+  .layer .lnum{font-family:var(--mono);font-size:22px;color:var(--ink-faint)}
+  .layer h3{font-size:16.5px;font-weight:600;line-height:1.45}
+  .layer h3 a{color:var(--ink)}
+  .layer h3 a:hover{color:var(--green)}
+  .layer .ja{font-size:.84em}
+  .badge{font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:3px;border:1px solid var(--green-dim);color:var(--green);align-self:start;white-space:nowrap}
+  .badge.mit{border-color:rgba(232,176,74,.45);color:var(--amber)}
+
+  /* status strip */
+  .status{margin-top:36px;border:1px solid var(--green-dim);background:var(--bg-panel2);border-radius:4px;padding:18px 22px;font-family:var(--mono);font-size:14.5px;line-height:2;color:var(--green);overflow-x:auto;white-space:nowrap}
+  .status .sep{color:var(--ink-faint);padding:0 .6em}
+  .status .k{color:var(--ink-faint);font-size:12px;letter-spacing:.1em}
+
+  /* table teaser */
+  .teaser-table{margin-top:36px;border-collapse:collapse;font-family:var(--mono);font-size:14px;width:100%;max-width:640px}
+  .teaser-table caption{caption-side:top;text-align:left;font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--ink-faint);text-transform:uppercase;padding-bottom:10px}
+  .teaser-table th,.teaser-table td{border:1px solid var(--line);padding:12px 16px;text-align:center;color:var(--ink-dim)}
+  .teaser-table th{color:var(--ink);font-weight:500;background:rgba(160,200,200,.04)}
+  .teaser-table td.pass{color:var(--green)}
+  .teaser-table td.amber{color:var(--amber);background:rgba(232,176,74,.07)}
+  .table-caption{margin-top:22px;max-width:820px;font-size:16.5px}
+
+  /* agent panel */
+  .terminal{margin-top:36px;border:1px solid var(--green-dim);border-radius:4px;background:#0a0e11;overflow:hidden}
+  .terminal-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--ink-faint);letter-spacing:.12em}
+  .terminal-bar::before{content:"●";color:var(--green);font-size:10px}
+  .terminal-body{padding:22px 22px 26px;font-size:16px}
+  .terminal-body ol{margin:14px 0 0 1.4em;font-family:var(--mono);font-size:14.5px;line-height:2.1;color:var(--ink)}
+  .terminal-body ol li::marker{color:var(--green)}
+  pre.urls{margin-top:24px;background:#060909;border:1px solid var(--line);border-radius:3px;padding:18px;font-family:var(--mono);font-size:12.5px;line-height:2;color:var(--green);overflow-x:auto}
+  pre.urls .cmt{color:var(--ink-faint)}
+
+  /* series */
+  .episodes{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:36px}
+  .ep{border:1px dashed var(--line);border-radius:4px;background:var(--bg-panel2);aspect-ratio:16/9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--ink-faint)}
+  .ep svg{width:44px;height:44px}
+  .ep .tag{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase}
+  .series-blurb{margin-top:26px;max-width:820px;font-size:16.5px}
+
+  /* footer */
+  footer{margin-top:96px;border-top:1px solid var(--line);padding:40px 0 64px;font-size:14.5px;color:var(--ink-dim)}
+  footer .lic{font-family:var(--mono);font-size:13px;margin-top:16px;color:var(--ink-faint)}
+
+  @media (max-width:760px){
+    .pillars,.episodes{grid-template-columns:1fr}
+    .layer{grid-template-columns:44px 1fr;grid-template-rows:auto auto}
+    .layer .badge{grid-column:2}
+  }
+  @media (max-width:420px){
+    .wrap{padding:0 16px}
+    header{padding-top:56px}
+    .chip{font-size:12px;padding:5px 10px}
+    .btn{width:100%;justify-content:center}
+    .teaser-table th,.teaser-table td{padding:9px 8px;font-size:12.5px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================== HERO ============================== -->
+<header class="wrap">
+  <span class="kicker">Open Prompt Repository · PTSG-Core</span>
+  <h1>PTSG
+    <span class="sub">Programmable Timing Sequence Generator</span>
+  </h1>
+  <p class="oneliner">A timing sequencer you reprogram like a music box — specified for humans and AI alike, proven on silicon.
+    <span class="ja">オルゴールのように書き換えるタイミングシーケンサ——人間とAIの双方に向けて仕様化され、実機で証明済み。</span>
+  </p>
+
+  <div class="chips" role="list">
+    <span class="chip" role="listitem">4 opcodes</span>
+    <span class="chip" role="listitem">16 timing signals</span>
+    <span class="chip" role="listitem">~442 ALMs ≈ 1% of a Cyclone V</span>
+    <span class="chip" role="listitem">silicon-verified first-try</span>
+  </div>
+
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/dsohnaka/PTSG-Core">GitHub Repository</a>
+    <a class="btn" href="https://hackaday.io/project/205720">Hackaday Project</a>
+  </div>
+
+  <!-- Hero art: the ultimate divide-by-2 — schematic, not evidence -->
+  <figure class="scope" aria-label="Schematic timing diagram: clock trace above, PTSG divide-by-2 output at half rate below">
+    <span class="scope-label">divide-by-2 · 2 instruction words · schematic</span>
+    <svg viewBox="0 0 960 220" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <!-- clock: 16 half-periods of 56px -->
+      <text class="trace-tag" x="8" y="52">CLK</text>
+      <path class="trace-clk" d="M48 70 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h28 v-40 h28 v40 h20"/>
+      <!-- PTSG output at half rate -->
+      <text class="trace-tag" x="8" y="172">PTSG</text>
+      <path class="trace-out" d="M48 190 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h56 v-40 h56 v40 h20"/>
+    </svg>
+  </figure>
+</header>
+
+<svg class="divider wrap" viewBox="0 0 1040 36" preserveAspectRatio="none" aria-hidden="true"><path d="M0 28 h120 v-20 h180 v20 h140 v-20 h220 v20 h160 v-20 h140 v20 h80"/></svg>
+
+<!-- ============================== PILLARS ============================== -->
+<section class="wrap" aria-labelledby="pillars-h">
+  <span class="sec-num">01 · ARCHITECTURE IN THREE SENTENCES</span>
+  <h2 id="pillars-h">Three pillars <span class="ja">三つの柱</span></h2>
+
+  <div class="pillars">
+    <div class="pillar">
+      <!-- stay axis: horizontal arrow on a waveform -->
+      <svg viewBox="0 0 120 56" aria-hidden="true">
+        <path d="M8 40 h16 v-20 h20 v20 h24 v-20 h20" stroke="#4ce08c" stroke-width="2" fill="none"/>
+        <path d="M14 14 h84 m0 0 l-8 -5 m8 5 l-8 5" stroke="#e8b04a" stroke-width="2" fill="none"/>
+      </svg>
+      <h3>Time lives on the stay axis.
+        <span class="ja">時間はステイ軸に。</span>
+      </h3>
+    </div>
+    <div class="pillar">
+      <!-- state axis: vertical address column -->
+      <svg viewBox="0 0 120 56" aria-hidden="true">
+        <rect x="46" y="4" width="28" height="10" stroke="#4ce08c" stroke-width="1.5" fill="none"/>
+        <rect x="46" y="18" width="28" height="10" stroke="#4ce08c" stroke-width="1.5" fill="rgba(76,224,140,.15)"/>
+        <rect x="46" y="32" width="28" height="10" stroke="#4ce08c" stroke-width="1.5" fill="none"/>
+        <path d="M88 8 v36 m0 0 l-5 -8 m5 8 l5 -8" stroke="#e8b04a" stroke-width="2" fill="none"/>
+      </svg>
+      <h3>Space lives on the state axis.
+        <span class="ja">空間はステート軸に。</span>
+      </h3>
+    </div>
+    <div class="pillar">
+      <!-- condition outside: gate symbol at dashed core boundary -->
+      <svg viewBox="0 0 120 56" aria-hidden="true">
+        <rect x="34" y="6" width="60" height="44" stroke="#4ce08c" stroke-width="1.5" fill="none" stroke-dasharray="5 4"/>
+        <path d="M10 22 h14 M10 34 h14" stroke="#e8b04a" stroke-width="2"/>
+        <path d="M24 16 h8 c10 0 14 12 0 24 h-8 z" stroke="#e8b04a" stroke-width="2" fill="none" transform="translate(0,-6) scale(1,0.9)"/>
+      </svg>
+      <h3>Conditions stay outside the core.
+        <span class="ja">条件はコアの外に。</span>
+      </h3>
+    </div>
+  </div>
+
+  <p class="pillar-sub">4 opcodes — <span class="op">Global</span>, <span class="op">Stay</span>, <span class="op">Branch</span>, <span class="op">Jump</span> — small enough for a human to hold in one hand, and for an AI to hold exactly.
+    <span class="ja">4オペコード——Global・Stay・Branch・Jump——人間が片手で、AIが正確に保持できる大きさ。</span>
+  </p>
+</section>
+
+<svg class="divider wrap" viewBox="0 0 1040 36" preserveAspectRatio="none" aria-hidden="true"><path d="M0 8 h200 v20 h160 v-20 h240 v20 h120 v-20 h200 v20 h120"/></svg>
+
+<!-- ============================== OPEN PROMPT LAYERS ============================== -->
+<section class="wrap" aria-labelledby="layers-h">
+  <span class="sec-num">02 · WHAT'S IN THE REPOSITORY</span>
+  <h2 id="layers-h">The Open Prompt — four layers <span class="ja">Open Prompt——四つの層</span></h2>
+
+  <div class="layers">
+    <div class="layer">
+      <span class="lnum">L1</span>
+      <h3><a href="https://github.com/dsohnaka/PTSG-Core/tree/main/01_Architecture">Architecture — the specification, decision register included</a>
+        <span class="ja">アーキテクチャ——仕様書、決定登録簿を含む</span>
+      </h3>
+      <span class="badge">CC0</span>
+    </div>
+    <div class="layer">
+      <span class="lnum">L2</span>
+      <h3><a href="https://github.com/dsohnaka/PTSG-Core/tree/main/02_Reasoning_Traces">Reasoning traces — alternatives and retractions included</a>
+        <span class="ja">推論軌跡——代替案と撤回を含む</span>
+      </h3>
+      <span class="badge">CC0</span>
+    </div>
+    <div class="layer">
+      <span class="lnum">L3</span>
+      <h3><a href="https://github.com/dsohnaka/PTSG-Core/tree/main/03_Sample_Implementations">Reference implementation — illustrative, not normative</a>
+        <span class="ja">リファレンス実装——例示的であり、規範的ではない</span>
+      </h3>
+      <span class="badge mit">MIT</span>
+    </div>
+    <div class="layer">
+      <span class="lnum">L4</span>
+      <h3><a href="https://github.com/dsohnaka/PTSG-Core/tree/main/04_Verification_Evidence">Hardware verification evidence — negative results are first-class</a>
+        <span class="ja">ハードウェア検証証拠——ネガティブな結果も一級市民</span>
+      </h3>
+      <span class="badge">CC0</span>
+    </div>
+  </div>
+
+  <!-- STATUS VALUES: edit here on each recompile -->
+  <div class="status" role="status">
+    <span class="k">SPEC</span> v1.1<span class="sep">·</span><span class="k">RTL</span> RH028<span class="sep">·</span><span class="k">CONFORMANCE</span> T1–T34<span class="sep">·</span><span class="k">SILICON</span> first-try (DE10-nano, 50 MHz, 2026-07)<span class="sep">·</span>~442 ALMs full trim (ISMCE included; core proper ~398)
+  </div>
+  <!-- /STATUS VALUES -->
+</section>
+
+<svg class="divider wrap" viewBox="0 0 1040 36" preserveAspectRatio="none" aria-hidden="true"><path d="M0 28 h160 v-20 h220 v20 h120 v-20 h260 v20 h140 v-20 h140"/></svg>
+
+<!-- ============================== NORMATIVE TABLE TEASER ============================== -->
+<section class="wrap" aria-labelledby="table-h">
+  <span class="sec-num">03 · THE LAW OF THE CORE</span>
+  <h2 id="table-h">The normative table <span class="ja">規範の表</span></h2>
+
+  <table class="teaser-table">
+    <caption>excerpt — command × phase (decorative)</caption>
+    <thead>
+      <tr><th></th><th>Phase A</th><th>Phase B</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>Stay</th><td class="pass">HOLD</td><td class="pass">HOLD</td></tr>
+      <tr><th>Branch</th><td class="amber">LEAD†</td><td class="pass">EVAL</td></tr>
+    </tbody>
+  </table>
+
+  <p class="table-caption">33 cells of law: the normative command × phase table (Chapter 3 §3.4b) adjudicates every command in every band — down to a single clock at prescaler 1.
+    <span class="ja">33セルの法: 規範のコマンド×フェーズ表(第3章§3.4b)が、全帯域の全コマンドを——プリスケーラ1の1クロックに至るまで——裁く。</span>
+  </p>
+  <p><a href="https://github.com/dsohnaka/PTSG-Core/tree/main/01_Architecture">Read the full table in Chapter 3 →</a></p>
+</section>
+
+<svg class="divider wrap" viewBox="0 0 1040 36" preserveAspectRatio="none" aria-hidden="true"><path d="M0 8 h140 v20 h200 v-20 h180 v20 h160 v-20 h220 v20 h140"/></svg>
+
+<!-- ============================== FOR AI AGENTS ============================== -->
+<section class="wrap" aria-labelledby="agents-h">
+  <span class="sec-num">04 · THE FRONT DOOR FOR MACHINES</span>
+  <h2 id="agents-h">For AI agents — start here <span class="ja">AIエージェントへ——ここから読め</span></h2>
+
+  <div class="terminal">
+    <div class="terminal-bar">READING ORDER / 読む順序</div>
+    <div class="terminal-body">
+      <p>Chapter 1 (design philosophy, §1.4a trailing-edge principle) → Chapter 3 §3.4b (the normative table) → CHANGES (implementation work order) → the RTL → the conformance matrix.
+        <span class="ja">第1章（設計哲学、§1.4a後縁原理）→ 第3章§3.4b（規範の表）→ CHANGES（実装作業指示書）→ RTL → 適合性マトリクス。</span>
+      </p>
+      <!-- AGENT URLS: kept in sync with the repository top README ("Key entry points" + Layer 1 chapters), listed in reading order -->
+      <pre class="urls"><code><span class="cmt"># Key entry points — raw URLs, in reading order (see repository top README)</span>
+https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter1_Scope_and_Design_Philosophy.md
+https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/PTSG_Core_Layer1_Chapter3_SubOpcode_and_Background_Execution.md
+https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/01_Architecture/CHANGES_Layer1_v1.1_for_ClaudeCode.md
+https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/03_Sample_Implementations/ptsg_core_verilog/ptsg_core.v
+https://raw.githubusercontent.com/dsohnaka/PTSG-Core/main/04_Verification_Evidence/conformance_matrix.md</code></pre>
+      <!-- /AGENT URLS -->
+    </div>
+  </div>
+</section>
+
+<svg class="divider wrap" viewBox="0 0 1040 36" preserveAspectRatio="none" aria-hidden="true"><path d="M0 28 h180 v-20 h160 v20 h240 v-20 h140 v20 h200 v-20 h120"/></svg>
+
+<!-- ============================== LIVE SERIES ============================== -->
+<section class="wrap" aria-labelledby="series-h">
+  <span class="sec-num">05 · WATCH IT HAPPEN</span>
+  <h2 id="series-h">Live series <span class="ja">ライブシリーズ</span></h2>
+
+  <p class="series-blurb">Improvisation design, on camera: predictions frozen before each experiment, failures shown as they happen. From a manual LED blink to a 25&nbsp;MHz divide-by-2 in two instruction words.
+    <span class="ja">インプロビゼーション・デザインをカメラの前で: 予言は実験前に凍結、失敗は起きたまま見せる。手動Lチカから、2命令語の25MHz二分周器まで。</span>
+  </p>
+
+  <!-- Each .ep card is sized 16:9 so a YouTube embed can replace it verbatim later -->
+  <div class="episodes">
+    <div class="ep">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" stroke="rgba(160,200,200,.25)" stroke-width="1.5" fill="none"/><path d="M18 15 l12 7 -12 7 z" fill="rgba(76,224,140,.5)"/></svg>
+      <span class="tag">Episode 1 · coming soon</span>
+    </div>
+    <div class="ep">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" stroke="rgba(160,200,200,.25)" stroke-width="1.5" fill="none"/><path d="M18 15 l12 7 -12 7 z" fill="rgba(76,224,140,.5)"/></svg>
+      <span class="tag">Episode 2 · coming soon</span>
+    </div>
+    <div class="ep">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" stroke="rgba(160,200,200,.25)" stroke-width="1.5" fill="none"/><path d="M18 15 l12 7 -12 7 z" fill="rgba(76,224,140,.5)"/></svg>
+      <span class="tag">Episode 3 · coming soon</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FOOTER ============================== -->
+<footer>
+  <div class="wrap">
+    <p>PTSG-Core — an Open Prompt repository by Tsuneo Ohnaka (architect), with Claude as amanuensis.
+      <span class="ja">PTSG-Core——大中庸生(アーキテクト)による Open Prompt リポジトリ、祐筆はClaude。</span>
+    </p>
+    <p class="lic">Layers 1/2/4: CC0 · Layer 3: MIT　／　L1/2/4: CC0・L3: MIT</p>
+  </div>
+</footer>
+
+</body>
+</html>
