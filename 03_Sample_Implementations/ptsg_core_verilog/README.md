@@ -264,3 +264,12 @@ file for comparison, not as a fork starting point.
 Open Prompt に従う：第1・2層を読み、コアをゼロから再実装したものは、このサンプルの
 派生物ではなく**あなた自身の**独立した著作物である。本ファイルはフォークの起点では
 なく比較のために用いること。
+
+
+## Resource ledger / 資源台帳 (ALMs needed, Fitter "Resource Utilization by Entity")
+
+Recorded per RTL revision at recompile. Full trim = ISMCE live-edit port included. / 再コンパイル時に RH 改訂ごとに記帳。full trim = ISMCE 生編集ポート込み。
+
+| Date | Revision | ALMs needed (full trim) | Core proper (entity-only) | Comb. ALUTs | Notes |
+|---|---|---|---|---|---|
+| 2026-07-10 | RH028 | 441.8 | 398.0 | 631 (585 core) | Full v1.1: error HALT, queued-band machinery, LOOP_W=16, P=1 discipline. Pre-v1.1 minimal build was ~235 (same column) — the price of law and teeth. |
