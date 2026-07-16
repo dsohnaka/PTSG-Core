@@ -85,7 +85,13 @@ set_output_delay -clock altera_reserved_tck 3.000 [get_ports altera_reserved_tdo
 # system/PLL clocks. The reset crossing is additionally 2-FF
 # synchronized in the 100 MHz top; ISMCE/SignalTap handshakes are
 # handled inside the Intel megafunctions.
-set_clock_groups -asynchronous -group [get_clocks {altera_reserved_tck}]
+# Two-group collection form (review PR#4): the second group gathers every
+# clock except TCK by collection arithmetic, so the PLL's auto-derived
+# clock names never need to be spelled out (this line runs after
+# derive_pll_clocks above, so those clocks already exist here).
+set_clock_groups -asynchronous \
+    -group [get_clocks {altera_reserved_tck}] \
+    -group [remove_from_collection [get_clocks *] [get_clocks {altera_reserved_tck}]]
 
 #**************************************************************
 # Set False Path

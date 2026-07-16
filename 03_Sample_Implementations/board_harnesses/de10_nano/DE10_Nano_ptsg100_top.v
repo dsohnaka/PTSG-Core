@@ -77,7 +77,11 @@ module DE10_Nano_ptsg100_top(
 
 ////////////////////////	ptsg_core	////////////////////
 	wire	[15:0]	sig;
-	reg		[1:0]	rst_sync;      // 2-FF synchronizer: JTAG-source reset -> clk100
+	wire			core_error;    // error_flag (C3-F24) -> JTAG probe below
+	// 2-FF synchronizer: JTAG-source reset -> clk100. Power-up value 11:
+	// the core is held in reset from configuration until the synchronizer
+	// flushes AND the PLL locks, whichever is later.
+	reg		[1:0]	rst_sync = 2'b11;
 	wire			rst100;
 
 ////////////////////////	probe/source	////////////////////
@@ -91,6 +95,11 @@ module DE10_Nano_ptsg100_top(
 //=======================================================
 
 	assign	LED[7:0] = sig[7:0];
+
+	// JTAG probe payload (review PR#4): the LEDs already show sig[7:0], so
+	// the probe carries what is otherwise invisible -- PLL lock and the
+	// Core's runaway-error flag (C3-F24; doubles as a diagnostic trigger).
+	assign	probe = {6'b0, core_error, pll_locked};
 
 
 
@@ -139,12 +148,28 @@ module DE10_Nano_ptsg100_top(
 //  1 ms, so every program written for the 50 MHz harness keeps its
 //  wall-clock timing unchanged (the PTSG time axis is the tick grid).
 
+//  Unused external buses are tied off explicitly (review PR#4): inputs are
+//  driven to their inactive levels instead of left floating, so simulation
+//  never propagates X into the FSM and the synthesis report stays clean.
+//  ext_op_ready is tied HIGH ("external logic always ready" -- the neutral
+//  level the testbenches use; the Core never stalls on it either way,
+//  C3-T4). A Formation replaces these tie-offs with real connections.
+
 	ptsg_core	#(
 		.PRESCALE (100000)
 	) ptsg_core1 (
-		.clk(clk100)		,              // System clock 100 MHz   (Sec.5.3)
-		.rst(rst100)		,              // Synchronous, active-high (Sec.5.3, C5-V1/V3)
-		.timing_signals(sig)
+		.clk            (clk100)	,      // System clock 100 MHz   (Sec.5.3)
+		.rst            (rst100)	,      // Synchronous, active-high (Sec.5.3, C5-V1/V3)
+		.condition      (1'b0)		,
+		.timing_signals (sig)		,
+		.ext_op_ready   (1'b1)		,
+		.stack_rdata    (41'd0)		,
+		.stack_ack      (1'b0)		,
+		.insert_req     (1'b0)		,
+		.insert_target  (12'd0)		,
+		.indirect_data  (12'd0)		,
+		.indirect_ready (1'b0)		,
+		.error_flag     (core_error)       // C3-F24 flag -> JTAG probe
 
 	);
 
