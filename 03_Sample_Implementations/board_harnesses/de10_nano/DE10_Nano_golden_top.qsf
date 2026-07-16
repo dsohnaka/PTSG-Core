@@ -483,6 +483,11 @@ set_global_assignment -name MIF_FILE blinky_with_prescaler.mif
 set_global_assignment -name HEX_FILE blinky_with_prescaler.hex
 set_global_assignment -name VERILOG_FILE ptsg_imem.v
 set_global_assignment -name VERILOG_FILE ptsg_core.v
+set_global_assignment -name VERILOG_FILE DE10_Nano_ptsg100_top.v
+# 100 MHz build (RH029): switch the top-level entity to the PLL harness
+# variant by replacing the TOP_LEVEL_ENTITY assignment near the head of
+# this file with the line below (the shared SDC covers both tops):
+# set_global_assignment -name TOP_LEVEL_ENTITY "DE10_Nano_ptsg100_top"
 set_global_assignment -name SDC_FILE DE10_Nano_golden_top.sdc
 set_global_assignment -name SOURCE_FILE Spf1.spf
 set_global_assignment -name QIP_FILE test.qip
@@ -779,4 +784,4 @@ set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[27] -
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[29] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[31] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
-set_global_assignment -name SLD_FILE db/stp1_auto_stripped.stp
+set_global_assignment -name SLD_FILE db/stp1_auto_stripped.stp
