@@ -1,0 +1,218 @@
+{
+  "metadata": {
+    "title": "PTSG — The Free-Running Fruits, Reclaimed (RH029/RH030): One-Clock Tick, Raw-Tick Export, and the Prescaler as Pure Time-Base",
+    "title_ja": "PTSG — フリーランの果実の回収（RH029/RH030）: 1 クロック叩き、生ティック外部化、そして純粋な時間基準としてのプリスケーラ",
+    "date": "2026-08-27",
+    "session_type": "single-AI reconciliation dialogue (amanuensis): RTL read-back into Layer 1/2; closes a reserved forward link; provisional",
+    "participants": [
+      {
+        "name": "Tsuneo Ohnaka",
+        "name_ja": "大中庸生",
+        "role": "FPGA Architect (40+ years); sole design authority; supplied the governing premise (counter value not for external use; base-frequency generation only) and authored RH029/RH030",
+        "role_ja": "FPGAアーキテクト（40年以上）;唯一の設計決定権者;前提（カウンタ値は外部利用しない・基礎周波数生成のみ）を与え、RH029/RH030 を執筆"
+      },
+      {
+        "name": "Claude (Fable 5)",
+        "name_ja": "Claude（Fable 5）",
+        "role": "Anthropic — amanuensis (祐筆): RTL read-back, Layer 1/2 reconciliation, negative-data listing, this archive; no decision authority",
+        "role_ja": "Anthropic — 祐筆: RTL 読み戻し、Layer 1/2 辻褄合わせ、負のデータ列挙、本保管;決定権なし"
+      }
+    ],
+    "topic": "The forward link reserved in 2026-06-23_ptsg-reset-command-bands (Hook E: Fmax via a one-clock-registered tick; master/slave sync via an externalized raw tick; Build Log #9 + future trace) was implemented in RTL as RH029 (pin-level prescaler_value input, tri0, 0 = PRESCALE parameter fallback, presc_valueM = value-1 registered off the compare path) and RH030 (presc_tick registered one-clock pulse; presc_cnt rollover on the raw tick; prescaler_match = raw pre-register tick) before any trace or spec text existed. The architect supplied the governing premise this session: the prescaler counter value is in principle not for external use; the prescaler only generates the base frequency. From that premise: the internal tick may be re-timed freely (Fmax), and only the tick is worth exporting (sync). The trace reads the RTL back into Layer 1 vocabulary, distinguishes the sync actually delivered (period-sharing: same value + common reset + C3-F21) from the sync the reservation described (tick-following slave: not built), identifies the C4-T2 form actually built (B-prime, pin-level value, neither pure A nor Chapter 5's bus-register B), and records as negative data six places where RTL, session record, and spec disagree (==/>= in presc_tickP — ruled in-session: == stays, fail-loud; zero-check timing; undriven prescaler_output; missing rst; header/tag narration lag; undefined live-write semantics).",
+    "topic_ja": "2026-06-23_ptsg-reset-command-bands の Hook E で留保した前方リンク（1 クロック叩きによる Fmax、生ティック外部化によるマスター/スレーブ同期、Build Log #9＋将来 trace）が、trace も仕様文もないまま RH029（ピンレベル prescaler_value 入力、tri0、0 = PRESCALE パラメータへフォールバック、presc_valueM = value-1 を比較経路外で登録）と RH030（presc_tick を 1 クロック登録パルス化、presc_cnt の巻き戻しは生ティックで、prescaler_match = レジスタ前の生ティック）として RTL に先行実装された。アーキテクトは本セッションで前提を与えた: プリスケーラカウンタ値は原則外部利用しない;プリスケーラは基礎周波数の生成のみ。この前提から、内部ティックは自由に叩き直せ（Fmax）、外へ出す価値があるのはティックのみ（同期）。本 trace は RTL を Layer 1 の語彙へ読み戻し、実際に提供された同期（周期共有: 同一値＋共通リセット＋C3-F21）と留保が述べた同期（ティック追従スレーブ: 未実装）を区別し、実際に作られた C4-T2 の形（B′、ピンレベル値、純粋な A でも第5章のバスレジスタ B でもない）を同定し、RTL・セッション記録・仕様が食い違う六点（presc_tickP の ==/>=——本セッションで裁定: == 維持、fail-loud;ゼロ判定タイミング、未駆動 prescaler_output、rst 欠落、ヘッダ/タグの叙述遅れ、稼働中書換え意味論の未定義）を負のデータとして記録する。",
+    "status": "PROVISIONAL (仮確定) — reconciliation trace. RTL RH029/RH030 present in ptsg_core.v; header registration and Layer 1 write-back proposed (companion CHANGES document); RTL items DP-6 left OPEN for the architect's ruling; multi-LLM review before normative codification.",
+    "status_ja": "仮確定——辻褄合わせ trace。RTL は存在;ヘッダ登録と Layer 1 反映を提案（随伴 CHANGES 文書）;DP-6 の RTL 事項はアーキテクト裁定待ち;規範化前に複数 LLM レビュー。",
+    "companion_traces": "Rests on: 2026-06-22_ptsg-prescaler-phase-resolution (free-running deliberate, C4-F9); 2026-06-23_ptsg-reset-command-bands (C3-F21; Hook E reclaimed here); 2026-07-08_ptsg-p1-tick-collision (RH028 >= discipline, the anchor RH030 must preserve). Closes: Hook E of the Reset-bands trace and the 'Forthcoming (Chapter 6 / Build Log #9)' note in Chapter 5 § 5.12. / 依拠: 位相決着;Reset 帯域（Hook E 回収）;P=1 tick 衝突。回収: Reset 帯域 trace の Hook E、第5章 § 5.12 の近刊注記。",
+    "license": "CC0 1.0 Universal (Public Domain)",
+    "format_version": "1.0",
+    "intended_use": "Structured for direct ingestion by a language-model context. A reader who loads this file plus ptsg_core.v (RH029/RH030) and Chapters 4/5 understands why the internal tick is registered, why prescaler_match is the raw tick one clock ahead of it, what 'slave' currently means (period-sharing, not tick-following), which C4-T2 form the reference implementation embodies, and which RTL details remain open."
+  },
+  "decision_points": [
+    {
+      "id": "DP-1",
+      "point": "What the prescaler is: an observable counter, or a pure base-frequency generator?",
+      "alternatives": [
+        {
+          "label": "Observable counter",
+          "characterization": "prescaler_counter is a first-class output; Formations read the running value; its timing relative to the tick is part of the interface"
+        },
+        {
+          "label": "Pure base-frequency generator",
+          "characterization": "the counter is internal; only the tick has meaning outside; prescaler_counter is diagnostic/optional with no timing contract"
+        }
+      ],
+      "chosen": "Pure base-frequency generator (architect's premise, this session).",
+      "rationale": "If the counter is not an interface, the internal tick may be re-timed without breaking any external contract, and the sync problem reduces to sharing the tick. Under the observable-counter reading, RH030's one-clock re-timing would silently alter an interface. The chosen reading is also what C3-F21 already assumed: a time-base a program cannot touch is not a counter a program reads. Chapter 5 § 5.10 already lists prescaler_counter as optional; this decision supplies the reason."
+    },
+    {
+      "id": "DP-2",
+      "point": "Fmax: keep presc_tick combinational, or register it as a one-clock pulse (RH030)?",
+      "alternatives": [
+        {
+          "label": "Combinational presc_tick",
+          "characterization": "every FSM if(presc_tick) sees the 16-bit comparator plus the value mux on its path"
+        },
+        {
+          "label": "Registered presc_tick, one-clock pulse",
+          "characterization": "comparator cut at a flip-flop; FSM sees a clean FF output; +1 clock latency, +2 FFs"
+        }
+      ],
+      "chosen": "Registered (RH030).",
+      "rationale": "All in-core consumers use presc_tick uniformly, so the whole tick grid shifts by exactly one clock and every interval (Stay, FG command, C4-F9 phase-lock) is preserved. This moves the comparator behind a register boundary rather than cancelling its delay; the rollover presc_cnt <= presc_tickP ? 0 : presc_cnt+1 keeps a short local comparator loop, acceptable. Regression anchor: RH028's terminal-value pattern (stay_cnt terminal = target-1) and the >= deadline must be re-confirmed under the shifted grid (Hook A)."
+    },
+    {
+      "id": "DP-3",
+      "point": "Sync: which tick is exported on prescaler_match — registered, raw, or both?",
+      "alternatives": [
+        {
+          "label": "Registered tick",
+          "characterization": "the same edge the core acts on; a slave registering it lands one clock behind the master"
+        },
+        {
+          "label": "Raw pre-register tick",
+          "characterization": "prescaler_match = presc_tickP; a slave that registers it once lands coincident with the master's internal tick"
+        },
+        {
+          "label": "Both",
+          "characterization": "two outputs; Formation chooses"
+        }
+      ],
+      "chosen": "Raw pre-register tick (RTL as built, RH030), matching the 2026-06-23 wording 'externalized raw (pre-register) tick'.",
+      "rationale": "The one-register delay is reproduced identically on both sides, so master and slave act on the same instant. Consequences to codify: prescaler_match leads the core's internal tick by exactly one clock; it is combinational (carries comparator delay) and must be registered by the consumer — a timing-analysed output, not a glitch-free strobe. 'Both' costs nothing at the Formation level if a registered copy is ever needed."
+    },
+    {
+      "id": "DP-4",
+      "point": "What 'slave' means: period-sharing (delivered by RH029/RH030) versus tick-following (described by the 2026-06-23 reservation)",
+      "alternatives": [
+        {
+          "label": "Period-sharing slave",
+          "characterization": "all cores receive the same prescaler_value and one hardware reset; C3-F21 keeps them phase-locked forever; no tick input port — this is what RH029/RH030 provide"
+        },
+        {
+          "label": "Tick-following slave",
+          "characterization": "a core accepts an external tick in place of its own comparator (tick_in / bypass port), driven by the master's prescaler_match — not implemented"
+        },
+        {
+          "label": "Both, selectable at instantiation",
+          "characterization": "a parameter picks the mode"
+        }
+      ],
+      "chosen": "OPEN — Tie candidate for Chapter 6. RH029/RH030 realise period-sharing; the reservation's rationale ('a slave follows an externally-supplied tick') describes tick-following.",
+      "rationale": "Period-sharing already yields deterministic, identical tick latency across cores (DP-2) and suffices for same-clock, same-reset compositions on one FPGA. Tick-following is needed only across clock domains or resets and adds a Core port — a Core-Formation-separation question the architect must rule on. Recorded so the reservation's promise and the RTL's delivery are not confused."
+    },
+    {
+      "id": "DP-5",
+      "point": "Which C4-T2 form RH029 actually is",
+      "alternatives": [
+        {
+          "label": "(A) compile-time fixed",
+          "characterization": "parameter only, no pin — what the RTL header's Tie-lean line still says"
+        },
+        {
+          "label": "(B) runtime-configurable per Chapter 5 § 5.12",
+          "characterization": "Core-internal register written over the external-operation bus, no new pins — what the RTL tag says"
+        },
+        {
+          "label": "(B-prime) pin-level value input, as built",
+          "characterization": "prescaler_value is a tri0 input; 0/unconnected falls back to the PRESCALE parameter; the Formation decides whether the pin is a constant or a register; Chapter 5 § 5.2 already lists a prescaler_value input, mislabelled under option A"
+        }
+      ],
+      "chosen": "OPEN — recommend recording B-prime as the reference implementation's form and updating § 5.2/§ 5.12; C4-T2 remains a Tie, only the contributor's lean and the reference form change.",
+      "rationale": "B-prime preserves Core minimalism (no bus decode, no reserved sub-opcode), keeps (A) as the zero-cost default through the fallback, and pushes the register-or-constant question to the Formation — the discipline-preserving extension pattern."
+    },
+    {
+      "id": "DP-6",
+      "point": "Negative data: where RTL, session record, and spec still disagree (no ruling proposed)",
+      "alternatives": [
+        {
+          "label": "== vs >= in presc_tickP — RULED: stays ==",
+          "characterization": "the 2026-07-25 session record said '>= comparator protection'; the record was wrong, the file is right. Architect ruling 2026-08-27: a prescaler comparator that runs past its terminal is a fatal fault by concept; a loud 2^16-wrap is preferred to a quiet slightly-short period (fail-loud). Deliberate asymmetry with RH028, where >= on the stay counter serves the minimal-timing idiom; the time-base gets no such grace."
+        },
+        {
+          "label": "Zero-check timing",
+          "characterization": "prescaler_value == 0 is tested on the raw input while presc_valueM is one clock behind; a 0<->non-0 transition yields one clock of mismatched compare target"
+        },
+        {
+          "label": "Undriven prescaler_output",
+          "characterization": "declared in RH029, never assigned"
+        },
+        {
+          "label": "Reset hygiene",
+          "characterization": "presc_tick and presc_valueM sit in an always block without rst; one clock of X in simulation (the RH014 queued_opcode pattern)"
+        },
+        {
+          "label": "Narration lag",
+          "characterization": "header RH list ends at 028; Tie-lean line still says compile-time fixed; L579 tag reads RH030 with RH029's description; L458 '-cycle pulse' typo — third instance of the artifact ahead of the narration; L635 (presc_valueM <= prescaler_value - 1) is RH029 content under an RH030-only comment"
+        },
+        {
+          "label": "Live-write semantics undefined",
+          "characterization": "a new prescaler_value takes effect at the next compare as built; the stay counter has the barline rule, the prescaler has none"
+        }
+      ],
+      "chosen": "Item 1 RULED in-session (== stays, fail-loud); items 2-6 recorded as OPEN, each the architect's call (Hook C, Hook D).",
+      "rationale": "Negative-data discipline: specification lag behind RTL truth is a recognised risk and is recorded openly with provenance rather than silently patched by the amanuensis."
+    }
+  ],
+  "themes": [
+    {
+      "theme_id": "T1",
+      "title": "One decision, three fruits",
+      "summary": "No-prescaler-reset (C3-F21), the registered tick (Fmax), and the raw-tick export (sync) are one commitment — the prescaler is a sovereign time-base — seen from three sides. The premise 'the counter value is not for external use' is the hinge that makes the last two free."
+    },
+    {
+      "theme_id": "T2",
+      "title": "Period-sharing is not tick-following",
+      "summary": "RH029 gives every core the same period and, with a common reset, the same phase; it does not let a core follow another's tick. Both are 'master/slave'; only one is built. Naming the difference keeps Chapter 6 honest."
+    },
+    {
+      "theme_id": "T3",
+      "title": "The artifact ahead of the narration, again",
+      "summary": "The RTL delivered the reserved fruits before the trace existed; the header, the Tie lean, and one tag lagged. The discipline is unchanged: read the RTL back into the record, mark the gaps, do not let the record pretend it led."
+    }
+  ],
+  "resumption_hooks": [
+    {
+      "hook_id": "A",
+      "title": "Silicon confirmation under the shifted grid",
+      "description": "RH030 shifts every tick by one clock. RH028's anchors (bare Stay-1@P=1 = 1 clock; stay_cnt terminal = target-1; >= earliest firing) and the silicon anchors (T1 25:25, T2 30:30, T32) must hold unchanged.",
+      "starting_question": "Live Session #1 Scene 5 (P=1, 5:4 anomaly) is the first silicon test of RH028 on the RH030 RTL. Re-run T1/T2/T32/T34 and the P=1 functional tests on the RH030 RTL; SignalTap one prescaler_match -> presc_tick -> stay_cnt sequence at P=6250 and P=1. Does prescaler_match lead presc_tick by exactly one clock in silicon?"
+    },
+    {
+      "hook_id": "B",
+      "title": "Chapter 6: the tick-following slave",
+      "description": "DP-4's tick-input/bypass port is the unbuilt half of the reservation.",
+      "starting_question": "Is a tick input a Core port or a Formation wrapper around prescaler_value/reset? If a Core port: what does a slave's own presc_cnt do (free-run and ignore, or track)? Does a slave's Reset need special handling (the 2026-06-23 Hook E question)?"
+    },
+    {
+      "hook_id": "C",
+      "title": "RTL hygiene ruling",
+      "description": "DP-6 items 2-4 each need a yes/no from the architect (item 1 ruled: == stays). Deferred by the architect (2026-08-27) to a batched Layer 2 review at the next Layer 4 checkpoint, together with defects/open items already found during Live Session #1 verification; the source stays untouched until then.",
+      "starting_question": "Move the zero-check onto the registered path? Define or delete prescaler_output? Add rst to presc_tick/presc_valueM?"
+    },
+    {
+      "hook_id": "D",
+      "title": "Where the narrative lives",
+      "description": "The 2026-06-23 reservation named Build Log #9; Build Logs have since reached #12 and the free-running-fruits narrative did not appear under #9.",
+      "starting_question": "Retarget the reservation to a new Build Log (#13?) and correct the pointers in Chapter 5 § 5.12 and the Reset-bands trace, or leave a redirect note?"
+    },
+    {
+      "hook_id": "E",
+      "title": "Layer 1 write-back adoption",
+      "description": "The companion delta document CHANGES_Layer1_free-running-fruits_RH029-030.md drafts Chapter 4/5 text.",
+      "starting_question": "After multi-LLM review: which items become Fixed (registered internal tick; raw-tick export; counter-not-an-interface) and which stay Convention/Tie (B-prime form; live-write semantics; tick-following slave)?"
+    }
+  ],
+  "key_outputs_for_repository": [
+    "PREMISE (architect): the prescaler counter value is not, in principle, for external use; the prescaler generates the base frequency only. prescaler_counter is diagnostic/optional with no timing contract.",
+    "RH030 read-back: internal presc_tick is a one-clock registered pulse; the whole tick grid shifts by one clock uniformly; Fmax benefit = comparator behind a register boundary (not 'cancelled'); regression anchors unchanged pending Hook A.",
+    "RH030 read-back: prescaler_match = raw pre-register tick, leading the internal tick by exactly one clock; combinational, must be registered by the consumer; this is the 'externalized raw tick' of the 2026-06-23 reservation.",
+    "RH029 read-back: prescaler_value is a pin-level tri0 input; 0/unconnected = PRESCALE parameter fallback; presc_valueM = value-1 registered off the compare path. Form = B-prime (pin-level value), neither pure (A) nor Chapter 5's bus-register (B). C4-T2 remains a Tie.",
+    "Sync as delivered = period-sharing (same prescaler_value + common hardware reset + C3-F21); tick-following slave = not built, reserved for Chapter 6 (DP-4, Hook B).",
+    "RULED (architect): presc_tickP stays == — fail-loud; time-base overrun is fatal; deliberate asymmetry with RH028's >=.",
+    "OPEN (architect): zero-check timing; undriven prescaler_output; missing rst on presc_tick/presc_valueM; live-write semantics.",
+    "Narration corrections (architect-approved as canonical; entry dates 2026-07-16; not yet applied — source frozen during Layer 4 verification): RH029/RH030 header entries; C4-T2 lean line; L579 tag; L458 typo; two RH tags (RH030 presc_tick, RH029 presc_valueM) inside the tick always block (03_Sample_Implementations/.../RH029-030_header_patch.md).",
+    "Closes: Hook E of 2026-06-23_ptsg-reset-command-bands; Chapter 5 § 5.12 'Forthcoming' note (rewritten in the delta document).",
+    "Status: PROVISIONAL; multi-LLM review before Layer 1 codification."
+  ],
+  "closing_note": "A metronome does not show you its gears. It gives you the beat, and the beat is all it promises. Once the prescaler was allowed to be only that — a beat, not a number to be read — two things became free at once: the beat could be handed through one more register on its way inside, costing a clock and buying speed; and the beat could be handed outside, raw, so that another core might take it in and, through its own single register, land on the same instant. The gears stay hidden; the beat is shared. What remains to decide is whether a second metronome may listen, or must only be wound to the same setting and started at the same moment. / メトロノームは歯車を見せない。拍を与える、それだけを約束する。プリスケーラがそれだけのもの——読み取る数ではなく拍——であることを許された瞬間、二つのことが同時に自由になった: 拍を内側へ渡す途中でレジスタを一段くぐらせ、1 クロックを払って速度を買うこと;そして拍を外へ、生のまま渡し、別のコアがそれを受け取って自身の一段のレジスタを通し、同じ瞬間に着地すること。歯車は隠れたまま、拍は共有される。残る決めごとは、二台目のメトロノームが聴くことを許されるのか、それとも同じ目盛りに合わせて同じ瞬間に始動させるだけなのか、である。"
+}

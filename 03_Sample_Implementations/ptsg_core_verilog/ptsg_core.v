@@ -271,8 +271,8 @@ module ptsg_core #(
                                                   // supersedes the 12-bit C3-V2 reading)
     parameter integer IMEM_DEPTH  = 256,          // Instruction-memory depth (<= 4096)
     // ---- Prescaler (C4-T2 option A: compile-time fixed) ---------------------
-    parameter integer PRESCALE    = 5,            // System-clock divider for the time axis (>=1)
-    parameter integer PRESC_W     = 32,           // Prescaler counter width
+    parameter integer PRESCALE    = 6250,         // System-clock divider for the time axis (>=1)
+    parameter integer PRESC_W     = 16,           // Prescaler counter width
     // ---- External stack data layout ----------------------------------------
     //   {ins_flag, base[11:0], loop[15:0], state[11:0]} = 1 + 12 + 16 + 12 = 41
     parameter integer STACK_W     = 1 + ADDR_W + LOOP_W + ADDR_W,
@@ -318,6 +318,8 @@ module ptsg_core #(
     output reg                  stay_cnt_match,
     output wire [PRESC_W-1:0]   prescaler_counter,
     output wire                 prescaler_match,
+    input  tri0 [PRESC_W-1:0]   prescaler_value             , // RH029
+    output wire [PRESC_W-1:0]   prescaler_output            , // RH029
 
     // ---- Indirect-read bus (§5.11) ------------------------------------------
     output wire                 indirect_req,
@@ -451,7 +453,9 @@ module ptsg_core #(
 
     // Prescaler (free-running) -----------------------------------------------
     reg [PRESC_W-1:0] presc_cnt;
-    wire              presc_tick = (presc_cnt == (PRESCALE-1));
+    reg [PRESC_W-1:0] presc_valueM;
+    wire              presc_tickP = (presc_cnt == ((prescaler_value == 0) ? (PRESCALE-1) : presc_valueM));  //RH029: prescaler_value override (C4-T2 option B, PROVISIONAL)
+    reg               presc_tick;  // RH030    -cycle pulse, synchronous to clk, at every prescaler tick
 
     // Indirect-read latch ----------------------------------------------------
     reg               ind_is_loop;      // 0 = indirect Jump, 1 = indirect Loop target
@@ -572,7 +576,7 @@ module ptsg_core #(
     assign loop_counter       = loop_cnt;
     assign stay_counter       = stay_cnt[CNT_W-1:0];
     assign prescaler_counter  = presc_cnt;
-    assign prescaler_match    = presc_tick;
+    assign prescaler_match    = presc_tickP;    // RH030: prescaler_value override (C4-T2 option B, PROVISIONAL)
 
     // ========================================================================
     //  Resolved Stay duration: literal-zero-as-escape => 4096 (C2-F3)
@@ -626,6 +630,12 @@ module ptsg_core #(
         (state_num + 1'b1);
 
     always @(posedge clk) begin
+        // RH030: prescaler tick pulse, synchronous to clk, at every prescaler tick
+        presc_tick <= presc_tickP;
+        presc_valueM <= prescaler_value - 1;
+    end
+
+    always @(posedge clk) begin
         if (rst) begin
             // -------- Synchronous reset (C5-V3); also the Reset sub-op target -
             state_num       <= {ADDR_W{1'b0}};
@@ -677,7 +687,7 @@ module ptsg_core #(
             stay_cnt_match <= 1'b0;
 
             // Free-running prescaler ----------------------------------------
-            presc_cnt <= presc_tick ? {PRESC_W{1'b0}} : (presc_cnt + 1'b1);
+            presc_cnt <= presc_tickP ? {PRESC_W{1'b0}} : (presc_cnt + 1'b1);        // RH030 
 
             // =============================================================================//
             // REVISION HISTORY 011 (A4 hoist)                                              //
