@@ -140,8 +140,8 @@ module DE10_Nano_golden_top(
 
 
 ////////////////////////	probe/source	////////////////////
-	wire	[7:0]	probe;
-	wire	[7:0]	sub;
+	wire	[7:0]	      probe;
+	wire	[23:0]	sub;
 	
 
 
@@ -151,14 +151,27 @@ module DE10_Nano_golden_top(
 
 	assign	LED[7:0] = sig[7:0];
 	
+	assign	GPIO_0[0] = sig[0];
+	assign	GPIO_0[1] = sig[0];
+	assign	GPIO_0[2] = sig[0];
+	assign	GPIO_0[3] = sig[0];
+	assign	GPIO_1[0] = sig[0];
+	assign	GPIO_1[1] = sig[0];
+	assign	GPIO_1[2] = sig[0];
+	assign	GPIO_1[3] = sig[0];
+	//assign	GPIO_0[15:0] = sig[15:0];
+	//assign	GPIO_1[15:0] = sig[15:0];
 
 
 ////////////////////////	ptsg_core	////////////////////
 
 	ptsg_core	ptsg_core1(
-    	.clk(FPGA_CLK1_50)	,              // System clock           (˜5.3)
-    	.rst(sub[0])		,              // Synchronous, active-high (˜5.3, C5-V1/V3)
-		.timing_signals(sig)
+    	.clk(FPGA_CLK1_50)	      ,              // System clock           (ï¿½ï¿½5.3)
+    	.rst(sub[16])		      ,              // Synchronous, active-high (ï¿½ï¿½5.3, C5-V1/V3)
+    	.indirect_ready(1)	      ,              // Indirect-read ready (C4-T2 option B, PROVISIONAL)
+    	.indirect_data(0) 	      ,              // Indirect-read ready (C4-T2 option B, PROVISIONAL)
+	.timing_signals(sig)          ,              // Indirect-read ready (C4-T2 option B, PROVISIONAL)
+      .prescaler_value(sub[15:0])   ,              // Prescaler value (C4-T2 option B, PROVISIONAL)
 		
 	);
 	
@@ -166,13 +179,13 @@ module DE10_Nano_golden_top(
 
 ////////////////////////	probe/source	////////////////////
 	altsource_probe #(
-	    .source_width             (8),          // Sourcei“ü—Íj‚Ìƒrƒbƒg•
-	    .probe_width              (8)           // Probeio—Íj‚Ìƒrƒbƒg•
+	    .source_width             (24),          // Sourceï¿½iï¿½ï¿½ï¿½Íjï¿½Ìƒrï¿½bï¿½gï¿½ï¿½
+	    .probe_width              (8)           // Probeï¿½iï¿½oï¿½Íjï¿½Ìƒrï¿½bï¿½gï¿½ï¿½
 	)
 	probeIP
 	(
-		.probe 			(probe),
-		.source 		(sub)
+		.probe 		      (probe),
+		.source 		      (sub)
 		
 	);
 	
